@@ -81,6 +81,11 @@ const CIV_ECO = { // per-civ per-age rate OVERRIDES, merged onto GATHER for the 
   Mapuche: { dark: { food: 0.3875 } },
 };
 const UNITS = { // cost, train time (s), first age, producing building, civ exclusions; civMod = per-civ cost/train variants from aoe2-de-tools
+  villager: { label: "Villager", icon: "villager", age: "dark", t: 25, cost: { food: 50 }, bld: "towncenter", excl: [],
+    civMod: {
+      Hindustanis: { res: ["food"], disc: { dark: 0.10, feudal: 0.15, castle: 0.20, imperial: 0.25 } },
+      Persians: { train: { feudal: 1.10, castle: 1.15, imperial: 1.20 } }, // TC work rate = villager train speed
+    } },
   militia: { label: "Militia", emoji: "🗡", age: "dark", t: 21, cost: { food: 50, gold: 20 }, bld: "barracks",
     excl: ["Incas", "Mapuche", "Muisca", "Tupi"], // South American civs train the Champi line instead
     civMod: {
@@ -146,12 +151,143 @@ const UNITS = { // cost, train time (s), first age, producing building, civ excl
       Byzantines: { res: ["food", "gold"], disc: 0.25 },
     } },
 };
+const UNITS_UNIQ = { // civ -> its unique castle unit (stats from aoe2-de-tools; ages: castle)
+  Armenians: "u_compositebowman",
+  Aztecs: "u_jaguarwarrior",
+  Bengalis: "u_ratha",
+  Berbers: "u_camelarcher",
+  Bohemians: "u_hussitewagon",
+  Britons: "u_longbowman",
+  Bulgarians: "u_konnik",
+  Burgundians: "u_coustillier",
+  Burmese: "u_arambai",
+  Byzantines: "u_cataphract",
+  Celts: "u_woadraider",
+  Chinese: "u_chukonu",
+  Cumans: "u_kipchak",
+  Danes: "u_jomsviking",
+  Dravidians: "u_urumiswordsman",
+  Ethiopians: "u_shotelwarrior",
+  Franks: "u_throwingaxeman",
+  Georgians: "u_monaspa",
+  Goths: "u_huskarl",
+  Gurjaras: "u_shrivamsharider",
+  Hindustanis: "u_ghulam",
+  Huns: "u_tarkan",
+  Incas: "u_kamayuk",
+  Italians: "u_genoesecrossbowman",
+  Japanese: "u_samurai",
+  Jurchens: "u_ironpagoda",
+  Khitans: "u_liaodao",
+  Khmer: "u_ballistaelephant",
+  Koreans: "u_warwagon",
+  Lithuanians: "u_leitis",
+  Magyars: "u_magyarhuszar",
+  Malay: "u_karambitwarrior",
+  Malians: "u_gbeto",
+  Mapuche: "u_kona",
+  Mayans: "u_plumedarcher",
+  Mongols: "u_mangudai",
+  Muisca: "u_templeguard",
+  Persians: "u_warelephant",
+  Poles: "u_obuch",
+  Portuguese: "u_organgun",
+  Romans: "u_centurion",
+  Saracens: "u_mameluke",
+  Saxons: "u_hearthtroop",
+  Shu: "u_whitefeatherguard",
+  Sicilians: "u_serjeant",
+  Slavs: "u_boyar",
+  Spanish: "u_conquistador",
+  Tatars: "u_keshik",
+  Teutons: "u_teutonicknight",
+  Tupi: "u_ibirapemawarrior",
+  Turks: "u_janissary",
+  Varangians: "u_jarl",
+  Vietnamese: "u_rattanarcher",
+  Vikings: "u_berserk",
+  Wei: "u_tigercavalry",
+  Wu: "u_jianswordsman",
+};
+const UNITS_EXTRA = { // unique castle units, regional units and siege (stats from aoe2-de-tools; availability from aoe2techtree data)
+  u_compositebowman: { label: "Comp. Bowman", emoji: "★", age: "castle", t: 12, cost: { wood: 35, gold: 45 }, bld: "castle", only: ["Armenians"], prio: 0 },
+  u_jaguarwarrior: { label: "Jaguar Warrior", emoji: "★", age: "castle", t: 12, cost: { food: 60, gold: 30 }, bld: "castle", only: ["Aztecs"], prio: 0 },
+  u_ratha: { label: "Ratha", emoji: "★", age: "castle", t: 24, cost: { wood: 60, gold: 60 }, bld: "castle", only: ["Bengalis"], prio: 0 },
+  u_camelarcher: { label: "Camel Archer", emoji: "★", age: "castle", t: 25, cost: { wood: 50, gold: 60 }, bld: "castle", only: ["Berbers"], prio: 0 },
+  u_hussitewagon: { label: "Hussite Wagon", emoji: "★", age: "castle", t: 30, cost: { wood: 110, gold: 80 }, bld: "castle", only: ["Bohemians"], prio: 0 },
+  u_longbowman: { label: "Longbowman", emoji: "★", age: "castle", t: 18, cost: { wood: 35, gold: 40 }, bld: "castle", only: ["Britons"], prio: 0 },
+  u_konnik: { label: "Konnik", emoji: "★", age: "castle", t: 16, cost: { food: 60, gold: 70 }, bld: "castle", only: ["Bulgarians"], prio: 0 },
+  u_coustillier: { label: "Coustillier", emoji: "★", age: "castle", t: 15, cost: { food: 55, gold: 55 }, bld: "castle", only: ["Burgundians"], prio: 0 },
+  u_arambai: { label: "Arambai", emoji: "★", age: "castle", t: 18, cost: { wood: 75, gold: 60 }, bld: "castle", only: ["Burmese"], prio: 0 },
+  u_cataphract: { label: "Cataphract", emoji: "★", age: "castle", t: 20, cost: { food: 70, gold: 75 }, bld: "castle", only: ["Byzantines"], prio: 0 },
+  u_woadraider: { label: "Woad Raider", emoji: "★", age: "castle", t: 10, cost: { food: 70, gold: 25 }, bld: "castle", only: ["Celts"], prio: 0 },
+  u_chukonu: { label: "Chu Ko Nu", emoji: "★", age: "castle", t: 16, cost: { wood: 40, gold: 35 }, bld: "castle", only: ["Chinese"], prio: 0 },
+  u_kipchak: { label: "Kipchak", emoji: "★", age: "castle", t: 20, cost: { wood: 60, gold: 35 }, bld: "castle", only: ["Cumans"], prio: 0 },
+  u_jomsviking: { label: "Jomsviking", emoji: "★", age: "castle", t: 10, cost: { food: 65, gold: 15 }, bld: "castle", only: ["Danes"], prio: 0 },
+  u_urumiswordsman: { label: "Urumi", emoji: "★", age: "castle", t: 9, cost: { food: 65, gold: 20 }, bld: "castle", only: ["Dravidians"], prio: 0 },
+  u_shotelwarrior: { label: "Shotel Warrior", emoji: "★", age: "castle", t: 8, cost: { food: 50, gold: 30 }, bld: "castle", only: ["Ethiopians"], prio: 0 },
+  u_throwingaxeman: { label: "Throwing Axeman", emoji: "★", age: "castle", t: 13, cost: { food: 55, gold: 25 }, bld: "castle", only: ["Franks"], prio: 0 },
+  u_monaspa: { label: "Monaspa", emoji: "★", age: "castle", t: 14, cost: { food: 60, gold: 45 }, bld: "castle", only: ["Georgians"], prio: 0 },
+  u_huskarl: { label: "Huskarl", emoji: "★", age: "castle", t: 13, cost: { food: 75, gold: 35 }, bld: "castle", only: ["Goths"], prio: 0 },
+  u_shrivamsharider: { label: "Shrivamsha", emoji: "★", age: "castle", t: 20, cost: { food: 70, gold: 30 }, bld: "castle", only: ["Gurjaras"], prio: 0 },
+  u_ghulam: { label: "Ghulam", emoji: "★", age: "castle", t: 12, cost: { food: 30, gold: 45 }, bld: "castle", only: ["Hindustanis"], prio: 0 },
+  u_tarkan: { label: "Tarkan", emoji: "★", age: "castle", t: 14, cost: { food: 60, gold: 60 }, bld: "castle", only: ["Huns"], prio: 0 },
+  u_kamayuk: { label: "Kamayuk", emoji: "★", age: "castle", t: 10, cost: { food: 70, gold: 30 }, bld: "castle", only: ["Incas"], prio: 0 },
+  u_genoesecrossbowman: { label: "Genoese Xbow", emoji: "★", age: "castle", t: 14, cost: { wood: 45, gold: 40 }, bld: "castle", only: ["Italians"], prio: 0 },
+  u_samurai: { label: "Samurai", emoji: "★", age: "castle", t: 9, cost: { food: 45, gold: 30 }, bld: "castle", only: ["Japanese"], prio: 0 },
+  u_ironpagoda: { label: "Iron Pagoda", emoji: "★", age: "castle", t: 14, cost: { food: 80, gold: 55 }, bld: "castle", only: ["Jurchens"], prio: 0 },
+  u_liaodao: { label: "Liao Dao", emoji: "★", age: "castle", t: 12, cost: { food: 40, gold: 40 }, bld: "castle", only: ["Khitans"], prio: 0 },
+  u_ballistaelephant: { label: "Ballista Elephant", emoji: "★", age: "castle", t: 25, cost: { food: 100, gold: 80 }, bld: "castle", only: ["Khmer"], prio: 0 },
+  u_warwagon: { label: "War Wagon", emoji: "★", age: "castle", t: 21, cost: { wood: 200, gold: 60 }, bld: "castle", only: ["Koreans"], prio: 0 },
+  u_leitis: { label: "Leitis", emoji: "★", age: "castle", t: 20, cost: { food: 70, gold: 50 }, bld: "castle", only: ["Lithuanians"], prio: 0 },
+  u_magyarhuszar: { label: "Magyar Huszar", emoji: "★", age: "castle", t: 18, cost: { food: 35, gold: 45 }, bld: "castle", only: ["Magyars"], prio: 0 },
+  u_karambitwarrior: { label: "Karambit", emoji: "★", age: "castle", t: 6, cost: { food: 25, gold: 15 }, bld: "castle", only: ["Malay"], prio: 0 },
+  u_gbeto: { label: "Gbeto", emoji: "★", age: "castle", t: 17, cost: { food: 50, gold: 40 }, bld: "castle", only: ["Malians"], prio: 0 },
+  u_kona: { label: "Kona", emoji: "★", age: "castle", t: 14, cost: { food: 65, gold: 40 }, bld: "castle", only: ["Mapuche"], prio: 0 },
+  u_plumedarcher: { label: "Plumed Archer", emoji: "★", age: "castle", t: 16, cost: { wood: 55, gold: 55 }, bld: "castle", only: ["Mayans"], prio: 0 },
+  u_mangudai: { label: "Mangudai", emoji: "★", age: "castle", t: 26, cost: { wood: 55, gold: 65 }, bld: "castle", only: ["Mongols"], prio: 0 },
+  u_templeguard: { label: "Temple Guard", emoji: "★", age: "castle", t: 28, cost: { food: 70, gold: 45 }, bld: "castle", only: ["Muisca"], prio: 0 },
+  u_warelephant: { label: "War Elephant", emoji: "★", age: "castle", t: 25, cost: { food: 170, gold: 85 }, bld: "castle", only: ["Persians"], prio: 0 },
+  u_obuch: { label: "Obuch", emoji: "★", age: "castle", t: 12, cost: { food: 55, gold: 20 }, bld: "castle", only: ["Poles"], prio: 0 },
+  u_organgun: { label: "Organ Gun", emoji: "★", age: "castle", t: 28, cost: { wood: 80, gold: 70 }, bld: "castle", only: ["Portuguese"], prio: 0 },
+  u_centurion: { label: "Centurion", emoji: "★", age: "castle", t: 24, cost: { food: 75, gold: 85 }, bld: "castle", only: ["Romans"], prio: 0 },
+  u_mameluke: { label: "Mameluke", emoji: "★", age: "castle", t: 23, cost: { food: 55, gold: 85 }, bld: "castle", only: ["Saracens"], prio: 0 },
+  u_hearthtroop: { label: "Hearth Troop", emoji: "★", age: "castle", t: 16, cost: { wood: 80, gold: 35 }, bld: "castle", only: ["Saxons"], prio: 0 },
+  u_whitefeatherguard: { label: "White Feather", emoji: "★", age: "castle", t: 11, cost: { food: 60, gold: 15 }, bld: "castle", only: ["Shu"], prio: 0 },
+  u_serjeant: { label: "Serjeant", emoji: "★", age: "castle", t: 16, cost: { food: 55, gold: 25 }, bld: "castle", only: ["Sicilians"], prio: 0 },
+  u_boyar: { label: "Boyar", emoji: "★", age: "castle", t: 15, cost: { food: 60, gold: 70 }, bld: "castle", only: ["Slavs"], prio: 0 },
+  u_conquistador: { label: "Conquistador", emoji: "★", age: "castle", t: 26, cost: { food: 75, gold: 60 }, bld: "castle", only: ["Spanish"], prio: 0 },
+  u_keshik: { label: "Keshik", emoji: "★", age: "castle", t: 17, cost: { food: 60, gold: 40 }, bld: "castle", only: ["Tatars"], prio: 0 },
+  u_teutonicknight: { label: "Teutonic Knight", emoji: "★", age: "castle", t: 12, cost: { food: 85, gold: 30 }, bld: "castle", only: ["Teutons"], prio: 0 },
+  u_ibirapemawarrior: { label: "Ibirapema", emoji: "★", age: "castle", t: 24, cost: { food: 30, gold: 60 }, bld: "castle", only: ["Tupi"], prio: 0 },
+  u_janissary: { label: "Janissary", emoji: "★", age: "castle", t: 21, cost: { food: 60, gold: 55 }, bld: "castle", only: ["Turks"], prio: 0 },
+  u_jarl: { label: "Jarl", emoji: "★", age: "castle", t: 23, cost: { food: 75, gold: 55 }, bld: "castle", only: ["Varangians"], prio: 0 },
+  u_rattanarcher: { label: "Rattan Archer", emoji: "★", age: "castle", t: 16, cost: { wood: 50, gold: 45 }, bld: "castle", only: ["Vietnamese"], prio: 0 },
+  u_berserk: { label: "Berserk", emoji: "★", age: "castle", t: 14, cost: { food: 65, gold: 20 }, bld: "castle", only: ["Vikings"], prio: 0 },
+  u_tigercavalry: { label: "Tiger Cavalry", emoji: "★", age: "castle", t: 18, cost: { food: 60, gold: 80 }, bld: "castle", only: ["Wei"], prio: 0 },
+  u_jianswordsman: { label: "Jian Swordsman", emoji: "★", age: "castle", t: 35, cost: { food: 45, gold: 50 }, bld: "castle", only: ["Wu"], prio: 0 },
+  champi: { label: "Champi", emoji: "◆", age: "dark", t: 42, cost: { food: 50, gold: 25 }, bld: "barracks", only: ["Incas", "Mapuche", "Muisca", "Tupi"], prio: 1 },
+  eagle: { label: "Eagle", emoji: "◆", age: "castle", t: 46, cost: { food: 20, gold: 50 }, bld: "barracks", only: ["Aztecs", "Mayans"], prio: 1 },
+  mcb: { label: "Mtd. Xbow", emoji: "◆", age: "castle", t: 40, cost: { wood: 40, gold: 65 }, bld: "range", only: ["Bohemians", "Britons", "Burgundians", "Celts", "Danes", "Franks", "Italians", "Poles", "Portuguese", "Saxons", "Sicilians", "Spanish", "Teutons", "Varangians", "Vikings"], prio: 1 },
+  ram: { label: "Ram", emoji: "⚙", age: "castle", t: 36, cost: { wood: 160, gold: 75 }, bld: "siege", only: ["Armenians", "Aztecs", "Berbers", "Bohemians", "Britons", "Bulgarians", "Burgundians", "Burmese", "Byzantines", "Celts", "Chinese", "Cumans", "Danes", "Ethiopians", "Franks", "Georgians", "Goths", "Huns", "Incas", "Italians", "Japanese", "Jurchens", "Khitans", "Khmer", "Koreans", "Lithuanians", "Magyars", "Malay", "Malians", "Mapuche", "Mayans", "Mongols", "Muisca", "Persians", "Poles", "Portuguese", "Romans", "Saracens", "Saxons", "Shu", "Sicilians", "Slavs", "Spanish", "Tatars", "Teutons", "Tupi", "Turks", "Varangians", "Vietnamese", "Vikings", "Wei", "Wu"], prio: 3 },
+  mangonel: { label: "Mangonel", emoji: "⚙", age: "castle", t: 46, cost: { wood: 160, gold: 135 }, bld: "siege", only: ["Armenians", "Aztecs", "Bengalis", "Berbers", "Bohemians", "Britons", "Bulgarians", "Burgundians", "Burmese", "Byzantines", "Celts", "Cumans", "Danes", "Dravidians", "Ethiopians", "Franks", "Georgians", "Goths", "Gurjaras", "Hindustanis", "Huns", "Incas", "Italians", "Japanese", "Khmer", "Lithuanians", "Magyars", "Malay", "Malians", "Mapuche", "Mayans", "Mongols", "Muisca", "Persians", "Poles", "Portuguese", "Romans", "Saracens", "Saxons", "Shu", "Sicilians", "Slavs", "Spanish", "Tatars", "Teutons", "Tupi", "Turks", "Varangians", "Vietnamese", "Vikings", "Wei", "Wu"], prio: 3 },
+  scorpion: { label: "Scorpion", emoji: "⚙", age: "castle", t: 30, cost: { wood: 75, gold: 75 }, bld: "siege", only: ["Armenians", "Aztecs", "Bengalis", "Berbers", "Bohemians", "Britons", "Bulgarians", "Burgundians", "Burmese", "Byzantines", "Celts", "Chinese", "Cumans", "Danes", "Dravidians", "Ethiopians", "Franks", "Georgians", "Goths", "Gurjaras", "Hindustanis", "Huns", "Incas", "Italians", "Japanese", "Jurchens", "Khitans", "Khmer", "Koreans", "Lithuanians", "Magyars", "Malay", "Malians", "Mapuche", "Mayans", "Mongols", "Muisca", "Persians", "Poles", "Portuguese", "Romans", "Saracens", "Saxons", "Sicilians", "Slavs", "Spanish", "Tatars", "Teutons", "Tupi", "Turks", "Varangians", "Vietnamese", "Vikings", "Wei", "Wu"], prio: 3 },
+  siegetower: { label: "Siege Tower", emoji: "⚙", age: "castle", t: 36, cost: { wood: 100, gold: 120 }, bld: "siege", only: ["Armenians", "Aztecs", "Bengalis", "Berbers", "Bohemians", "Britons", "Bulgarians", "Burgundians", "Burmese", "Byzantines", "Celts", "Chinese", "Cumans", "Danes", "Dravidians", "Ethiopians", "Franks", "Georgians", "Goths", "Gurjaras", "Hindustanis", "Huns", "Incas", "Italians", "Japanese", "Jurchens", "Khitans", "Khmer", "Koreans", "Lithuanians", "Magyars", "Malay", "Malians", "Mapuche", "Mayans", "Mongols", "Muisca", "Persians", "Poles", "Portuguese", "Romans", "Saracens", "Saxons", "Shu", "Sicilians", "Slavs", "Spanish", "Tatars", "Teutons", "Tupi", "Turks", "Varangians", "Vietnamese", "Vikings", "Wei", "Wu"], prio: 3 },
+  petard: { label: "Petard", emoji: "⚙", age: "castle", t: 25, cost: { food: 65, gold: 20 }, bld: "siege", only: ["Armenians", "Aztecs", "Bengalis", "Berbers", "Bohemians", "Britons", "Bulgarians", "Burgundians", "Burmese", "Byzantines", "Celts", "Chinese", "Cumans", "Danes", "Dravidians", "Ethiopians", "Franks", "Georgians", "Goths", "Gurjaras", "Hindustanis", "Huns", "Incas", "Italians", "Japanese", "Jurchens", "Khitans", "Khmer", "Koreans", "Lithuanians", "Magyars", "Malay", "Malians", "Mapuche", "Mayans", "Mongols", "Muisca", "Persians", "Poles", "Portuguese", "Romans", "Saracens", "Saxons", "Shu", "Sicilians", "Slavs", "Spanish", "Tatars", "Teutons", "Tupi", "Turks", "Varangians", "Vietnamese", "Vikings", "Wei", "Wu"], prio: 3 },
+  trebuchet: { label: "Trebuchet", emoji: "⚙", age: "castle", t: 50, cost: { wood: 200, gold: 200 }, bld: "castle", only: null, prio: 3 },
+  bombard: { label: "Bombard", emoji: "⚙", age: "imperial", t: 56, cost: { wood: 225, gold: 225 }, bld: "siege", only: ["Berbers", "Bohemians", "Burgundians", "Burmese", "Byzantines", "Dravidians", "Ethiopians", "Franks", "Goths", "Gurjaras", "Hindustanis", "Italians", "Jurchens", "Koreans", "Lithuanians", "Malay", "Malians", "Persians", "Poles", "Portuguese", "Saracens", "Spanish", "Teutons", "Turks", "Vietnamese"], prio: 3 },
+};
+
+// All units = regular + unique + regional + siege. prio: 0 unique castle unit, 1 regional, 2 regular, 3 siege.
+const ALL_UNITS = { ...UNITS, ...UNITS_EXTRA };
+const UNIT_PRIO = (u) => (u.id === "villager" ? -1 : u.prio != null ? u.prio : 2);
 const TEAM_BONUS = { // applied automatically from the civ panel (own civ + allies, non-stacking)
   Huns:    { label: "🐎 Huns: Stables +20%", bld: "stable", mult: 1.20 },
   Goths:   { label: "🗡 Goths: Barracks +20%", bld: "barracks", mult: 1.20 },
   Britons: { label: "🏹 Britons: Ranges +20%", bld: "range", mult: 1.20 },
 };
 const CONSCRIPTION = 1.33; // Imperial, assumed researched
+const APP_VERSION = "1.8"; // bump on every change; shown top-right so deployed/viewed builds are identifiable
 
 // ---------- Icons: actual game art (Age of Empires Wiki, fair-use game assets) ----------
 const IMGS = {
@@ -424,7 +560,7 @@ function CivBadge({ side, value, active, onOpen }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <button onClick={onOpen}
-        className="flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-sm font-bold"
+        className="civ-badge flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-sm font-bold"
         style={{
           borderColor: color + "aa",
           backgroundColor: active ? color + "33" : "#241b10",
@@ -465,7 +601,7 @@ function CivPicker({ color, civs, value, extra, onSelect }) {
         style={{ display: "grid", gridTemplateColumns: "repeat(4, 68px)", gap: 6, padding: 8, backgroundColor: "#1a1410", border: "2px solid " + color, borderRadius: 16, maxHeight: "76vh", overflowY: "auto", boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
         {extra && extra.map((x) => (
           <button key={String(x.value)} onClick={() => onSelect(x.value)}
-            className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+            className="civ-tile flex flex-col items-center justify-center rounded-lg px-1 py-1"
             style={tile(String(x.value) === String(value))}>
             <span style={{ fontSize: 18, lineHeight: "22px" }}>{x.icon || ""}</span>
             <span className="max-w-full truncate" style={{ fontSize: 10, fontWeight: "bold" }}>{x.label}</span>
@@ -473,14 +609,14 @@ function CivPicker({ color, civs, value, extra, onSelect }) {
         ))}
         {civs.map((c) => (
           <button key={c} onClick={() => onSelect(c)}
-            className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+            className="civ-tile flex flex-col items-center justify-center rounded-lg px-1 py-1"
             style={tile(c === value)}>
             <img src={CIV_ICON(c)} alt={c} style={{ width: 22, height: 22, objectFit: "contain" }} />
             <span className="max-w-full truncate" style={{ fontSize: 10, fontWeight: "bold" }}>{c}</span>
           </button>
         ))}
         <button onClick={() => onSelect("")}
-          className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+          className="civ-tile flex flex-col items-center justify-center rounded-lg px-1 py-1"
           style={tile(false)}>
           <span style={{ fontSize: 18, lineHeight: "22px" }}>✕</span>
           <span style={{ fontSize: 10, fontWeight: "bold" }}>Clear</span>
@@ -496,34 +632,44 @@ const ord = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && 
 function StepMini({ s, size, opacity, timeSize, accent }) {
   const dest = s.to ? LOC[s.to] : null;
   const src = s.from ? LOC[s.from] : null;
-  // Static arrows only — animations inside dimmed steps read as full opacity
+  // Mirrors the current-step card skeleton: icon over time on the left, action line + note on the right.
   return (
-    <div style={{ opacity }} className="flex flex-1 flex-col items-center justify-start gap-0.5 text-center">
-      <span className="font-mono font-bold" style={{ fontSize: timeSize, color: accent }}>{s.t}</span>
-      <div className="flex items-center gap-1">
+    <div style={{ opacity }} className="flex min-w-[150px] flex-1 items-center gap-2 text-left">
+      <div className="flex shrink-0 flex-col items-center gap-0.5">
+        {s.vill && <Icon kind="villager" size={size} />}
+        {s.move && <Icon kind={src.icon} size={size} />}
+        {s.action && <Icon kind={s.iconHint || "house"} size={size} />}
+        <span className="font-mono font-bold leading-none" style={{ fontSize: timeSize, color: accent }}>{s.t}</span>
+      </div>
+      <div className="flex flex-col gap-0.5">
         {s.vill && (
-          <>
-            <Icon kind="villager" size={size} />
-            <span style={{ color: accent, fontSize: size * 0.6, fontWeight: "bold" }}>➜</span>
-            <Icon kind={dest.icon} size={size} />
-          </>
+          <div className="flex items-center gap-1 font-bold text-amber-100" style={{ fontSize: timeSize + 3 }}>
+            <span>{ord(s.vill + 3)} villager</span>
+            <span style={{ color: accent }}>➜</span>
+            <Icon kind={dest.icon} size={Math.round(size * 0.8)} />
+            <span>{dest.label}</span>
+          </div>
         )}
         {s.move && (
-          <>
-            <Icon kind={src.icon} size={size} />
-            <span style={{ color: accent, fontSize: size * 0.6, fontWeight: "bold" }}>➜</span>
-            <Icon kind={dest.icon} size={size} />
-            <span style={{ fontSize: timeSize + 2 }} className="font-bold text-amber-100">×{s.move}</span>
-          </>
+          <div className="flex items-center gap-1 font-bold text-amber-100" style={{ fontSize: timeSize + 3 }}>
+            <Icon kind={src.icon} size={Math.round(size * 0.8)} />
+            <span>×{s.move}</span>
+            <span style={{ color: accent }}>➜</span>
+            <Icon kind={dest.icon} size={Math.round(size * 0.8)} />
+            <span>{dest.label}</span>
+          </div>
         )}
-        {s.action && <Icon kind={s.iconHint || "house"} size={size} />}
+        {s.action && (
+          <div className="font-semibold" style={{ fontSize: timeSize + 2, color: accent }}>
+            {s.action.length > 24 ? s.action.slice(0, 23) + "…" : s.action}
+          </div>
+        )}
+        {s.note && (
+          <div style={{ fontSize: timeSize, color: "rgba(243,232,207,0.75)" }}>
+            {s.note.length > 28 ? s.note.slice(0, 27) + "…" : s.note}
+          </div>
+        )}
       </div>
-      {s.vill && <span style={{ fontSize: timeSize + 2 }} className="font-bold text-amber-100">{ord(s.vill + 3)} villager</span>}
-      {s.action && (
-        <span style={{ fontSize: timeSize + 1 }} className="max-w-[140px] leading-tight font-semibold text-amber-100/90">
-          {s.action.length > 36 ? s.action.slice(0, 35) + "…" : s.action}
-        </span>
-      )}
     </div>
   );
 }
@@ -546,8 +692,7 @@ function App() {
   // Production calculator state
   const [pcOpen, setPcOpen] = useState(false);
   const [pcAge, setPcAge] = useState("feudal");
-  const [pcCiv, setPcCiv] = useState(""); // "" = follow civ panel's Me civ
-  const [pcSel, setPcSel] = useState({}); // unitId -> building count
+  const [pcSel, setPcSel] = useState({ villager: 1 }); // unitId -> building count (villager = TC count; 1 TC by default)
   const bo = useMemo(() => BUILD_ORDERS.find((b) => b.id === boId), [boId]);
   const steps = bo.steps;
   const step = steps[i];
@@ -586,26 +731,27 @@ function App() {
   const vills = Object.values(assign).reduce((a, b) => a + b, 0);
 
   // ---- Production calculator derived values ----
-  const pcCivName = pcCiv === "Generic" ? "" : pcCiv || myCiv || "";
+  const pcCivName = myCiv || ""; // calculator always follows the civ panel's Me civ ("" = generic rates)
   const pcTotals = useMemo(() => {
     const ageRates = { ...GATHER[pcAge], ...((CIV_ECO[pcCivName] || {})[pcAge] || {}) };
     const rate = (res) => ageRates[res];
     const totals = { food: 0, wood: 0, gold: 0 };
     for (const [id, n] of Object.entries(pcSel)) {
-      if (!n || !UNITS[id]) continue;
+      if (!n || !ALL_UNITS[id]) continue;
       const u = UNITS[id];
       // per-civ unit variants (cost discounts per age, train-speed multipliers)
       const mod = (u.civMod || {})[pcCivName] || null;
       let t = u.t;
       const cost = { ...u.cost };
       if (mod) {
-        if (mod.train) t = t / mod.train;
+        const tt = typeof mod.train === "number" ? mod.train : ((mod.train && mod.train[pcAge]) || 1);
+        if (tt && tt !== 1) t = t / tt;
         if (mod.disc) {
           const d = typeof mod.disc === "number" ? mod.disc : (mod.disc[pcAge] || 0);
           for (const r of (mod.res || Object.keys(cost))) if (cost[r] != null) cost[r] = cost[r] * (1 - d);
         }
       }
-      let speed = pcAge === "imperial" ? CONSCRIPTION : 1;
+      let speed = pcAge === "imperial" && u.bld !== "towncenter" && u.bld !== "siege" ? CONSCRIPTION : 1;
       // Team bonuses derived from the civ panel: own civ + allies (non-stacking)
       const teamCivs = new Set([myCiv, ...allies].filter(Boolean));
       for (const a of teamCivs) { const tb = TEAM_BONUS[a]; if (tb && tb.bld === u.bld) speed *= tb.mult; }
@@ -643,7 +789,15 @@ function App() {
   const moveFwd = step.move ? colCenter(step.to) > colCenter(step.from) : true;
 
   return (
-    <div className="flex min-h-screen flex-col gap-3 p-2 sm:p-4" style={{ backgroundColor: "#14100a", color: "#f3e8cf", fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
+    <div className="flex min-h-screen flex-col gap-2 p-2 sm:p-4" style={{ backgroundColor: "#14100a", color: "#f3e8cf", fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
+      <style>{`.civ-badge:hover { filter: brightness(1.35); }
+.civ-badge:active { filter: brightness(0.85); }
+.civ-tile:hover { filter: brightness(1.35); border-color: rgba(243,232,207,0.45) !important; }
+.civ-tile:active { filter: brightness(0.85); }
+*, *::before, *::after { box-sizing: border-box; }
+.pc-header:hover { filter: brightness(1.3); }
+.pills-scroll::-webkit-scrollbar, .ctx-scroll::-webkit-scrollbar { display: none; }
+.pills-scroll, .ctx-scroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
       {/* Build tabs — vill/pop counter left-aligned */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="rounded-lg bg-black/40 px-4 py-1.5 text-lg font-semibold tabular-nums text-amber-200">
@@ -656,6 +810,7 @@ function App() {
             {b.name}
           </button>
         ))}
+        <span className="ml-auto self-center px-1 font-mono text-[10px] text-amber-100/35">v{APP_VERSION}</span>
       </div>
 
       {/* PERSISTENT LOCATION BOARD */}
@@ -665,10 +820,11 @@ function App() {
           const n = assign[loc] || 0;
           const hot = (step.vill && step.to === loc) || (step.move && step.to === loc);
           const cold = step.move && step.from === loc;
-          const moving = step.move && (step.to === loc || step.from === loc);
           const HL = { food: "#b04040", wood: "#3f7a3f", gold: "#9a7a20", stone: "#5a6470" }[loc] || bo.accent;
           const shown = Math.min(n, 10);
           const rest = n - 10;
+          // Only the dots representing the moved villagers animate (e.g. 1 of 10), not the whole column.
+          const moveN = step.move && (step.to === loc || step.from === loc) ? Math.max(1, Math.min(step.move, shown)) : 0;
           return (
             <motion.div key={loc}
               animate={{ scale: hot ? [1, 1.06, 1] : 1, opacity: n === 0 && !hot ? 0.35 : 1 }}
@@ -682,23 +838,29 @@ function App() {
               <span className="text-2xl font-semibold leading-tight tabular-nums" style={{ color: n > 0 ? L.color : "#5a5142" }}>{n}</span>
               <div className="flex max-w-full flex-wrap justify-center" style={{ rowGap: 2, minHeight: 8 }}>
                 <div className="flex justify-center" style={{ columnGap: 2 }}>
-                  {Array.from({ length: Math.min(shown, 5) }).map((_, k) => (
+                  {Array.from({ length: Math.min(shown, 5) }).map((_, k) => {
+                    const moving = moveN > 0 && k >= shown - moveN;
+                    return (
                     <motion.span key={k}
-                      animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : {}}
-                      transition={{ repeat: Infinity, duration: 0.9, delay: k * 0.06 }}
+                      animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : { scale: 1, opacity: 1 }}
+                      transition={moving ? { repeat: Infinity, duration: 0.9, delay: (k - (shown - moveN)) * 0.06 } : { duration: 0.2 }}
                       className="h-2 w-2 rounded-full"
                       style={{ backgroundColor: L.color, boxShadow: moving ? `0 0 6px ${L.color}` : "none" }} />
-                  ))}
+                    );
+                  })}
                 </div>
                 {shown > 5 && (
                   <div className="flex justify-center" style={{ marginLeft: 5, columnGap: 2 }}>
-                    {Array.from({ length: shown - 5 }).map((_, k) => (
+                    {Array.from({ length: shown - 5 }).map((_, k) => {
+                      const moving = moveN > 0 && (k + 5) >= shown - moveN;
+                      return (
                       <motion.span key={k + 5}
-                        animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : {}}
-                        transition={{ repeat: Infinity, duration: 0.9, delay: (k + 5) * 0.06 }}
+                        animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : { scale: 1, opacity: 1 }}
+                        transition={moving ? { repeat: Infinity, duration: 0.9, delay: (k + 5 - (shown - moveN)) * 0.06 } : { duration: 0.2 }}
                         className="h-2 w-2 rounded-full"
                         style={{ backgroundColor: L.color, boxShadow: moving ? `0 0 6px ${L.color}` : "none" }} />
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 {rest > 0 && <span className="text-[9px] leading-3" style={{ color: L.color }}>+{rest}</span>}
@@ -710,7 +872,7 @@ function App() {
       </div>
 
       {/* ARROW INDICATOR ROW — below the board, aligned to its columns */}
-      <div className="relative h-14 rounded-xl bg-black/30" style={{ marginTop: -6 }}>
+      <div className="relative h-12 rounded-xl bg-black/30" style={{ marginTop: -6 }}>
         {step.vill && (
           <div className="absolute flex flex-col items-center"
             style={{ left: `${colCenter(step.to) * 100}%`, transform: "translateX(-50%)", bottom: 2, top: 0 }}>
@@ -772,92 +934,16 @@ function App() {
         })}
       </div>
 
-      {/* PRODUCTION CALCULATOR — expanding panel */}
-      <div className="rounded-xl border border-amber-900/50 bg-black/30">
-        <button onClick={() => setPcOpen(!pcOpen)}
-          className="flex w-full items-center justify-between rounded-xl px-4 py-1.5 text-sm font-semibold text-amber-200 hover:bg-black/30">
-          <span>⚒ Production calculator — vills for constant production</span>
-          <span>{pcOpen ? "▲" : "▼"}</span>
-        </button>
-        {pcOpen && (
-          <div className="flex flex-col gap-2 px-4 pb-3 pt-1">
-            {/* Age + civ + team bonuses */}
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              {AGE_KEYS.map((a) => (
-                <button key={a} onClick={() => setPcAge(a)}
-                  className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-all"
-                  style={{ backgroundColor: pcAge === a ? bo.accent : "#241b10", color: pcAge === a ? "#14100a" : "#cbb98e" }}>
-                  {AGE_LABEL[a]}
-                </button>
-              ))}
-              <button onClick={() => setPicker(picker === "pc" ? null : "pc")}
-                className="flex items-center gap-1.5 rounded-lg border border-amber-900/70 bg-black/50 px-2 py-1.5 text-xs font-bold text-amber-100">
-                {pcCivName && CIVS[pcCivName] && <img src={CIV_ICON(pcCivName)} alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />}
-                Civ: {pcCiv || myCiv || "Generic"} <span className="text-[10px] opacity-60">&#9662;</span>
-              </button>
-            </div>
-            {picker === "pc" && (
-              <CivPicker color={bo.accent} civs={BASE_CIV_LIST} value={pcCiv}
-                extra={[{ value: "Generic", label: "Generic", icon: "⚒" }]}
-                onSelect={(v) => { if (v !== null) setPcCiv(v); setPicker(null); }} />
-            )}
-            {/* Unit selection grid */}
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(UNITS).filter(([id, u]) => AGE_KEYS.indexOf(u.age) <= AGE_KEYS.indexOf(pcAge) && !u.excl.includes(pcCivName)).map(([id, u]) => {
-                const sel = pcSel[id] || 0;
-                return (
-                  <button key={id} onClick={() => setPcSel((s) => ({ ...s, [id]: sel ? 0 : 1 }))}
-                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-all"
-                    style={{
-                      backgroundColor: sel ? bo.accent + "33" : "#1d1610",
-                      border: "1px solid " + (sel ? bo.accent : "#3a2e1c"),
-                      color: sel ? "#f3e8cf" : "#9a8a68", textDecoration: u.excl.includes(pcCivName) ? "line-through" : "none",
-                    }}
-                    title={u.excl.includes(pcCivName) ? "Not available for " + pcCivName : u.label + " — " + Object.entries(u.cost).map(([r, v]) => v + " " + r).join(", ") + ", " + u.t + "s"}>
-                    <span>{u.emoji}</span><span>{u.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Building counts + totals */}
-            {Object.entries(pcSel).filter(([, n]) => n > 0).length > 0 && (
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(pcSel).filter(([, n]) => n > 0).map(([id, n]) => (
-                    <span key={id} className="flex items-center gap-1.5 rounded-lg bg-black/40 px-2 py-1 text-xs text-amber-100">
-                      <span>{UNITS[id].emoji}</span>
-                      <select value={n} onChange={(e) => setPcSel((s) => ({ ...s, [id]: Number(e.target.value) }))}
-                        className="rounded bg-black/50 px-1 py-0.5 text-xs text-amber-100">
-                        {[1, 2, 3, 4, 5, 6].map((k) => <option key={k} value={k}>{k}×</option>)}
-                      </select>
-                      <span className="text-amber-100/60">{UNITS[id].label}</span>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-4 rounded-xl bg-black/35 px-4 py-2">
-                  <span className="text-[11px] uppercase tracking-wide text-amber-100/40">vills needed</span>
-                  {["food", "wood", "gold"].map((res) => {
-                    const v = pcTotals[res];
-                    if (!v) return null;
-                    return (
-                      <span key={res} className="flex items-baseline gap-1.5">
-                        <Icon kind={res === "food" ? "food" : res === "wood" ? "woodres" : "goldres"} size={22} />
-                        <span className="text-xl font-semibold tabular-nums" style={{ color: RES_C[res] }}>{Math.ceil(v)}</span>
-                        <span className="text-[11px] uppercase text-amber-100/50">{res}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+      {/* Faint minute ruler across the main display — unobtrusive, fading out toward both screen edges */}
+      <div className="relative h-2.5" style={{ maskImage: "linear-gradient(90deg, transparent 0%, black 18%, black 82%, transparent 100%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, black 18%, black 82%, transparent 100%)" }}>
+        <div className="absolute left-0 right-0" style={{ top: "50%", height: 1, backgroundColor: "rgba(74,144,217,0.30)" }} />
+        {minuteMarks.map(({ pct }) => (
+          <span key={pct} className="absolute rounded-full" style={{ left: pct + "%", top: "50%", transform: "translate(-50%, -50%)", width: 3, height: 3, backgroundColor: "rgba(74,144,217,0.45)" }} />
+        ))}
       </div>
 
-      {/* CIV PANEL: moved below the running-action display; see after the context row */}
-
       {/* CONTEXT ROW: 2 prev — current — 2 next (always one horizontal row; next1 sits directly at place 1) */}
-      <div className="flex flex-row items-stretch gap-3 overflow-x-auto">
+      <div className="ctx-scroll flex flex-row items-stretch gap-3 overflow-x-auto">
         <div className="flex flex-1 items-center justify-end gap-3">
           {prev2 && <StepMini s={prev2} size={24} opacity={0.3} timeSize={12} accent={bo.accent} />}
           {prev1 && <StepMini s={prev1} size={30} opacity={0.55} timeSize={13} accent={bo.accent} />}
@@ -902,6 +988,89 @@ function App() {
         </div>
       </div>
 
+      {/* PRODUCTION CALCULATOR — expanding panel */}
+      <div className="rounded-xl border border-amber-900/50 bg-black/30">
+        <button onClick={() => setPcOpen(!pcOpen)}
+          className="pc-header flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold text-amber-200"
+          style={{ backgroundColor: "#241b10", border: "1px solid #3a2e1c", minHeight: 34 }}>
+          <span>⚒ Production calculator — vills for constant production</span>
+          <span>{pcOpen ? "▲" : "▼"}</span>
+        </button>
+        {pcOpen && (
+          <div className="flex flex-col gap-2 px-4 pb-3 pt-1">
+            {/* Age selection; civ comes from the civ panel's "Me" (team bonuses derived from Me + allies) */}
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {AGE_KEYS.map((a) => (
+                <button key={a} onClick={() => setPcAge(a)}
+                  className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-all"
+                  style={{ backgroundColor: pcAge === a ? bo.accent : "#241b10", color: pcAge === a ? "#14100a" : "#cbb98e" }}>
+                  {AGE_LABEL[a]}
+                </button>
+              ))}
+            </div>
+            {/* Unit selection grid */}
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(ALL_UNITS)
+                .filter(([id, u]) => AGE_KEYS.indexOf(u.age) <= AGE_KEYS.indexOf(pcAge))
+                .filter(([id, u]) => u.only ? u.only.includes(pcCivName) : !(u.excl || []).includes(pcCivName))
+                .sort((a, b) => UNIT_PRIO({ ...a[1], id: a[0] }) - UNIT_PRIO({ ...b[1], id: b[0] }))
+                .map(([id, u]) => {
+                const sel = pcSel[id] || 0;
+                return (
+                  <button key={id} onClick={() => setPcSel((s) => ({ ...s, [id]: sel ? 0 : 1 }))}
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-all"
+                    style={{
+                      backgroundColor: sel ? bo.accent + "33" : "#1d1610",
+                      border: "1px solid " + (sel ? bo.accent : "#3a2e1c"),
+                      color: sel ? "#f3e8cf" : "#9a8a68", textDecoration: (u.excl || []).includes(pcCivName) ? "line-through" : "none",
+                    }}
+                    title={(u.excl || []).includes(pcCivName) ? "Not available for " + pcCivName : u.label + " — " + Object.entries(u.cost).map(([r, v]) => v + " " + r).join(", ") + ", " + u.t + "s"}>
+                    {u.icon ? <Icon kind={u.icon} size={18} /> : <span>{u.emoji}</span>}<span>{u.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Building counts + totals */}
+            {Object.entries(pcSel).filter(([, n]) => n > 0).length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(pcSel).filter(([, n]) => n > 0).map(([id, n]) => (
+                    <span key={id} className="flex items-center gap-1.5 rounded-lg bg-black/40 px-2 py-1 text-xs text-amber-100">
+                      {ALL_UNITS[id].icon ? <Icon kind={ALL_UNITS[id].icon} size={16} /> : <span>{ALL_UNITS[id].emoji}</span>}
+                      <span className="flex items-center gap-0.5">
+                        <button onClick={() => setPcSel((st) => ({ ...st, [id]: Math.max(1, n - 1) }))}
+                          className="rounded px-1.5 font-bold" title="Fewer buildings"
+                          style={{ backgroundColor: "#241b10", color: "#f3e8cf", border: "1px solid #3a2e1c", minHeight: 28, minWidth: 28 }}>−</button>
+                        <span className="px-0.5 text-center tabular-nums" style={{ minWidth: 24 }}>{n}×</span>
+                        <button onClick={() => setPcSel((st) => ({ ...st, [id]: Math.min(6, n + 1) }))}
+                          className="rounded px-1.5 font-bold" title="More buildings"
+                          style={{ backgroundColor: "#241b10", color: "#f3e8cf", border: "1px solid #3a2e1c", minHeight: 28, minWidth: 28 }}>+</button>
+                      </span>
+                      <span className="text-amber-100/60">{ALL_UNITS[id].bld === "towncenter" ? "TCs" : ALL_UNITS[id].label}</span>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-4 rounded-xl bg-black/35 px-4 py-2">
+                  <span className="text-[11px] uppercase tracking-wide text-amber-100/40">vills needed</span>
+                  {["food", "wood", "gold"].map((res) => {
+                    const v = pcTotals[res];
+                    if (!v) return null;
+                    return (
+                      <span key={res} className="flex items-baseline gap-1.5">
+                        <Icon kind={res === "food" ? "food" : res === "wood" ? "woodres" : "goldres"} size={22} />
+                        <span className="text-xl font-semibold tabular-nums" style={{ color: RES_C[res] }}>{Math.ceil(v)}</span>
+                        <span className="text-[11px] uppercase text-amber-100/50">{res}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+
       {/* CIV PANEL — below the running action display */}
       <div className="flex justify-center">
         <button onClick={() => setCivsOpen(!civsOpen)}
@@ -910,9 +1079,9 @@ function App() {
         </button>
       </div>
       {civsOpen && (
-        <div className="rounded-2xl border border-amber-900/50 bg-black/30 px-3 py-2">
+        <div className="civ-panel rounded-2xl border border-amber-900/50 bg-black/30 px-3 py-2">
           {/* Row 1: me + friends — always visible while open */}
-          <div className="flex flex-wrap justify-center gap-2 sm:gap-4">
+          <div className="flex flex-wrap justify-start gap-2 sm:gap-4">
             <CivBadge side="me" value={myCiv} active={picker === "me"}
               onOpen={() => setPicker(picker === "me" ? null : "me")} />
             {allies.map((a, k) => (
@@ -948,22 +1117,24 @@ function App() {
       {/* Progression + controls */}
       <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button onClick={prev} className="rounded-xl bg-black/50 px-5 py-2 text-xl hover:bg-black/70">◀</button>
-        <div className="flex-1 overflow-x-auto rounded-xl bg-black/30 p-1.5">
-          <div className="relative" style={{ display: "grid", gridTemplateColumns: `repeat(${steps.length}, minmax(56px, 1fr))`, gap: "4px" }}>
-            {/* minute ruler above the pills, positions computed from step times */}
-            <div className="absolute left-0 right-0 top-0 h-3.5">
+        <div className="pills-scroll flex-1 overflow-x-auto">
+          <div style={{ minWidth: "max-content" }}>
+            {/* minute ruler on its own line above the pills panel: blue dots connected by a line */}
+            <div className="relative mb-1 h-4">
+              <div className="absolute left-0 right-0" style={{ top: 13, height: 1, backgroundColor: "rgba(74,144,217,0.55)" }} />
               {minuteMarks.map(({ m, pct }) => (
                 <div key={m} className="absolute flex flex-col items-center" style={{ left: pct + "%", transform: "translateX(-50%)" }}>
-                  <span className="text-[9px] font-bold leading-none text-amber-100/50">{m}</span>
-                  <span className="mt-0.5 h-1 w-1 rounded-full bg-amber-100/50" />
+                  <span className="text-[9px] font-bold leading-none" style={{ color: "#7db4e8" }}>{m}</span>
+                  <span className="mt-[1px] h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#4a90d9" }} />
                 </div>
               ))}
             </div>
+            <div className="rounded-xl bg-black/30 p-1.5" style={{ display: "grid", gridTemplateColumns: `repeat(${steps.length}, minmax(56px, 1fr))`, gap: "4px" }}>
           {steps.map((s, idx) => {
             const vc = villCount(steps, idx);
             return (
               <button key={idx} onClick={() => setI(idx)}
-                className="mt-4 flex flex-col items-center rounded-lg px-1 py-0.5 text-[10px] leading-tight transition-all"
+                className="flex flex-col items-center rounded-lg px-1 py-0.5 text-[10px] leading-tight transition-all"
                 style={{
                   backgroundColor: idx === i ? bo.accent + "33" : "transparent",
                   border: idx === i ? "1px solid " + bo.accent : "1px solid transparent",
@@ -975,6 +1146,7 @@ function App() {
               </button>
             );
           })}
+            </div>
           </div>
         </div>
         <button onClick={next} disabled={i >= steps.length - 1}
