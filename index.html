@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AoE2 DE Build Order Companion</title>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "framer-motion": "https://esm.sh/framer-motion@11.11.17?deps=react@18.3.1,react-dom@18.3.1"
+  }
+}
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>window.tailwind = { config: { corePlugins: { preflight: false } } };</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #14100a; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #cbb98e; font-family: Georgia, serif; font-size: 22px; }
+</style>
+</head>
+<body>
+<div id="root"><div id="loading">Loading companion…</div></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+
+// Baseline gather rates per villager per MINUTE (no eco upgrades).
+const RATES_MIN = { sheep: 19.8, boar: 24.6, berries: 18.6, farms: 19.2, wood: 23.4, gold: 22.8, stone: 21.6 };
+const RES_C = { food: "#d4a94a", wood: "#7a9a4e", gold: "#e3c14f", stone: "#a8b2bd" };
+/* ================= PRODUCTION CALCULATOR (aoe2-de-tools model, data extracted & verified vs patch 185872) =================
+   vills(res) = buildingCount * cost[res] / trainTime * speedMult / gatherRate(res, age, civ).
+   Per-age gather rates assume ALL eco techs of that age are researched:
+   food = farms (Wheelbarrow feudal, Hand Cart castle; Heavy Plow rate effect included in tool's farm rows),
+   wood = Double-Bit Axe feudal, Bow Saw castle, Two-Man Saw imperial,
+   gold/stone = Gold/Stone Mining feudal, Shaft Mining castle. Source rows scraped from aoe2-de-tools (patch 185872 data). */
+const AGE_KEYS = ["dark", "feudal", "castle", "imperial"];
+const AGE_LABEL = { dark: "Dark", feudal: "Feudal", castle: "Castle", imperial: "Imperial" };
+const GATHER = { // per second, generic, all eco techs of the age researched
+  dark:     { food: 0.3383, wood: 0.39, gold: 0.38, stone: 0.36 },
+  feudal:   { food: 0.3838, wood: 0.47, gold: 0.44, stone: 0.41 },
+  castle:   { food: 0.40, wood: 0.56, gold: 0.50, stone: 0.48 },
+  imperial: { food: 0.40, wood: 0.62, gold: 0.50, stone: 0.48 },
+};
+const CIV_ECO = { // per-civ per-age rate OVERRIDES, merged onto GATHER for the selected age
+  // farm civs: absolute farm rates from aoe2-de-tools per age (dark=base, feudal=Wheelbarrow, castle+=Hand Cart)
+  Aztecs:  { dark: { food: 0.3743 }, feudal: { food: 0.3983 } },
+  Slavs:   { dark: { food: 0.389 }, feudal: { food: 0.4408 }, castle: { food: 0.46 }, imperial: { food: 0.46 } },
+  Berbers: { dark: { food: 0.348 }, feudal: { food: 0.3855 } },
+  Mayans:  { dark: { food: 0.325 }, feudal: { food: 0.3598 }, castle: { food: 0.402 }, imperial: { food: 0.402 } },
+  Khmer:   { dark: { food: 0.358 }, feudal: { food: 0.3927 } },
+  // flat eco multipliers
+  Celts:    { dark: { wood: 0.4485 }, feudal: { wood: 0.5405 }, castle: { wood: 0.644 }, imperial: { wood: 0.713 } },
+  Turks:    { dark: { gold: 0.475 }, feudal: { gold: 0.55 }, castle: { gold: 0.625 }, imperial: { gold: 0.625 } },
+  Koreans:  { dark: { stone: 0.432 }, feudal: { stone: 0.492 }, castle: { stone: 0.576 }, imperial: { stone: 0.576 } },
+  Malians:  { dark: { gold: 0.418 }, feudal: { gold: 0.484 }, castle: { gold: 0.55 }, imperial: { gold: 0.55 } },
+  Romans:   { dark: { food: 0.3552, wood: 0.4095, gold: 0.399, stone: 0.378 },
+              feudal: { food: 0.403, wood: 0.4935, gold: 0.462, stone: 0.4305 },
+              castle: { food: 0.42, wood: 0.588, gold: 0.525, stone: 0.504 },
+              imperial: { food: 0.42, wood: 0.651, gold: 0.525, stone: 0.504 } },
+  Georgians: { dark: { food: 0.3721, wood: 0.429, gold: 0.418, stone: 0.396 },
+              feudal: { food: 0.4222, wood: 0.517, gold: 0.484, stone: 0.451 },
+              castle: { food: 0.44, wood: 0.616, gold: 0.55, stone: 0.528 },
+              imperial: { food: 0.44, wood: 0.682, gold: 0.55, stone: 0.528 } },
+  Danes:    { dark: { food: 0.3552 }, feudal: { food: 0.403 }, castle: { food: 0.42 }, imperial: { food: 0.42 } },
+  Armenians: { // eco tech effects +4% stronger: tech-affected rows only (dark age unaffected)
+              feudal: { wood: 0.4888, gold: 0.4576, stone: 0.4264 },
+              castle: { wood: 0.5824, gold: 0.52, stone: 0.4992 },
+              imperial: { wood: 0.6448, gold: 0.52, stone: 0.4992 } },
+  Burgundians: { // eco techs available ONE AGE EARLIER (verified)
+              dark: { food: 0.3838, wood: 0.47, gold: 0.44, stone: 0.41 },
+              feudal: { food: 0.40, wood: 0.56, gold: 0.50, stone: 0.48 },
+              castle: { wood: 0.62 } },
+  // dark-age food-source specialists (shepherd/hunter/forager rows; standard farms from feudal)
+  Mongols: { dark: { food: 0.574 } },
+  Britons: { dark: { food: 0.4125 } },
+  Franks:  { dark: { food: 0.3565 } },
+  Mapuche: { dark: { food: 0.3875 } },
+};
+const UNITS = { // cost, train time (s), first age, producing building, civ exclusions; civMod = per-civ cost/train variants from aoe2-de-tools
+  militia: { label: "Militia", emoji: "🗡", age: "dark", t: 21, cost: { food: 50, gold: 20 }, bld: "barracks",
+    excl: ["Incas", "Mapuche", "Muisca", "Tupi"], // South American civs train the Champi line instead
+    civMod: {
+      Goths: { res: ["food", "gold"], disc: { dark: 0.15, feudal: 0.20, castle: 0.25, imperial: 0.30 } },
+      Aztecs: { train: 1.15 },
+      Portuguese: { res: ["gold"], disc: 0.20 },
+    } },
+  maa: { label: "M@A", emoji: "🗡", age: "feudal", t: 21, cost: { food: 50, gold: 20 }, bld: "barracks",
+    excl: ["Incas", "Mapuche", "Muisca", "Tupi"],
+    civMod: {
+      Goths: { res: ["food", "gold"], disc: { dark: 0.15, feudal: 0.20, castle: 0.25, imperial: 0.30 } },
+      Aztecs: { train: 1.15 },
+      Portuguese: { res: ["gold"], disc: 0.20 },
+    } },
+  scout: { label: "Scout", emoji: "🐎", age: "feudal", t: 30, cost: { food: 80 }, bld: "stable",
+    excl: ["Aztecs", "Incas", "Mayans", "Mapuche", "Muisca", "Tupi"], // no Stables
+    civMod: {
+      Berbers: { res: ["food"], disc: { castle: 0.15, imperial: 0.20 } },
+      Magyars: { res: ["food"], disc: 0.15 },
+      Khitans: { train: 1.25 },
+    } },
+  skirm: { label: "Skirm", emoji: "🏹", age: "feudal", t: 26, cost: { food: 25, wood: 35 }, bld: "range", excl: [],
+    civMod: {
+      Aztecs: { train: 1.11 },
+      Byzantines: { res: ["food", "wood"], disc: 0.25 },
+      Incas: { res: ["food"], disc: { feudal: 0.10, castle: 0.15, imperial: 0.20 } },
+      Koreans: { res: ["wood"], disc: 0.50 },
+      Khitans: { train: 1.25 },
+    } },
+  archer: { label: "Archer", emoji: "🏹", age: "feudal", t: 35, cost: { wood: 25, gold: 45 }, bld: "range", excl: [],
+    civMod: {
+      Aztecs: { train: 1.11 },
+      Portuguese: { res: ["gold"], disc: 0.20 },
+      Mayans: { res: ["wood", "gold"], disc: { feudal: 0.10, castle: 0.20, imperial: 0.30 } },
+      Koreans: { res: ["wood"], disc: 0.50 },
+    } },
+  pike: { label: "Pikeman", emoji: "🔱", age: "castle", t: 22, cost: { food: 35, wood: 25 }, bld: "barracks", excl: [],
+    civMod: {
+      Goths: { res: ["food", "wood"], disc: { feudal: 0.20, castle: 0.25, imperial: 0.30 } },
+      Incas: { res: ["food"], disc: { feudal: 0.20, castle: 0.25, imperial: 0.30 } },
+      Byzantines: { res: ["food", "wood"], disc: 0.25 },
+      Koreans: { res: ["wood"], disc: 0.50 },
+      Aztecs: { train: 1.11 },
+      Khitans: { train: 1.25 },
+    } },
+  xbow: { label: "Xbow", emoji: "🏹", age: "castle", t: 27, cost: { wood: 25, gold: 45 }, bld: "range",
+    excl: ["Bulgarians", "Spanish"],
+    civMod: {
+      Aztecs: { train: 1.11 },
+      Portuguese: { res: ["gold"], disc: 0.20 },
+      Mayans: { res: ["wood", "gold"], disc: { feudal: 0.10, castle: 0.20, imperial: 0.30 } },
+    } },
+  knight: { label: "Knight", emoji: "🐴", age: "castle", t: 30, cost: { food: 60, gold: 75 }, bld: "stable",
+    excl: ["Aztecs", "Incas", "Mayans", "Mapuche", "Muisca", "Tupi", "Hindustanis"],
+    civMod: {
+      Berbers: { res: ["food", "gold"], disc: { castle: 0.15, imperial: 0.20 } },
+      Portuguese: { res: ["gold"], disc: 0.20 },
+    } },
+  camel: { label: "Camel", emoji: "🐪", age: "castle", t: 22, cost: { food: 55, gold: 60 }, bld: "stable",
+    excl: ["Aztecs", "Incas", "Mayans", "Mapuche", "Muisca", "Tupi", "Britons", "Celts", "Franks", "Goths", "Japanese"],
+    civMod: {
+      Berbers: { res: ["food", "gold"], disc: { castle: 0.15, imperial: 0.20 } },
+      Byzantines: { res: ["food", "gold"], disc: 0.25 },
+    } },
+};
+const TEAM_BONUS = { // applied automatically from the civ panel (own civ + allies, non-stacking)
+  Huns:    { label: "🐎 Huns: Stables +20%", bld: "stable", mult: 1.20 },
+  Goths:   { label: "🗡 Goths: Barracks +20%", bld: "barracks", mult: 1.20 },
+  Britons: { label: "🏹 Britons: Ranges +20%", bld: "range", mult: 1.20 },
+};
+const CONSCRIPTION = 1.33; // Imperial, assumed researched
+
+// ---------- Icons: actual game art (Age of Empires Wiki, fair-use game assets) ----------
+const IMGS = {
+  berries: "icons/berries.webp",
+  boar: "icons/boar.webp",
+  farms: "icons/farms.webp",
+  food: "icons/food.webp",
+  gold: "icons/gold.webp",
+  goldres: "icons/goldres.webp",
+  house: "icons/house.webp",
+  sheep: "icons/sheep.webp",
+  stone: "icons/stone.webp",
+  stoneres: "icons/stoneres.webp",
+  villager: "icons/villager.webp",
+  wood: "icons/wood.webp",
+  woodres: "icons/woodres.webp",
+};
+
+function Icon({ kind, size = 36 }) {
+  if (!IMGS[kind]) return null;
+  return (
+    <img src={IMGS[kind]} alt={kind} style={{ width: size, height: size, objectFit: "contain", imageRendering: "auto", display: "block" }} />
+  );
+}
+
+// Locations in board order. "build" = house-building vills.
+const LOC = {
+  sheep: { label: "Sheep", icon: "sheep", color: "#e8d5a3", res: "food" },
+  boar: { label: "Boar", icon: "boar", color: "#c96f4a", res: "food" },
+  berries: { label: "Berries", icon: "berries", color: "#a34a6e", res: "food" },
+  farms: { label: "Farms", icon: "farms", color: "#d9a441", res: "food" },
+  wood: { label: "Wood", icon: "wood", color: "#7a9a4e", res: "wood" },
+  gold: { label: "Gold", icon: "gold", color: "#d4b143", res: "gold" },
+  stone: { label: "Stone", icon: "stone", color: "#9aa3ad", res: "stone" },
+  build: { label: "Houses", icon: "house", color: "#c9b088", res: "none" },
+};
+const COLS = Object.keys(LOC);
+
+/* Events: { t, vill, to } | { t, move, from, to } | { t, action, note, house? } */
+
+const BUILD_ORDERS = [
+  {
+    id: "scouts", name: "Scouts 20", accent: "#4a90d9", pop: 20,
+    steps: [
+      { t: "0:00", vill: 1, to: "sheep", note: "Vills 1–3 on sheep" },
+      { t: "0:25", vill: 2, to: "sheep" },
+      { t: "0:50", vill: 3, to: "sheep" },
+      { t: "0:55", action: "Scout out — find sheep & boars", note: "2 houses built by a sheep vill now" },
+      { t: "1:15", vill: 4, to: "sheep" },
+      { t: "1:40", vill: 5, to: "sheep" },
+      { t: "2:05", vill: 6, to: "sheep", note: "TC never idle" },
+      { t: "2:15", move: 1, from: "sheep", to: "build", note: "House! Then back to sheep", back: "sheep" },
+      { t: "2:30", vill: 7, to: "sheep" },
+      { t: "2:55", vill: 8, to: "wood", note: "Lumber camp on forward forest" },
+      { t: "3:20", vill: 9, to: "boar", note: "Vill 9 lures the first boar" },
+      { t: "3:45", vill: 10, to: "boar" },
+      { t: "4:10", move: 6, from: "sheep", to: "boar", note: "Sheep done → all to boar" },
+      { t: "4:15", vill: 11, to: "boar" },
+      { t: "4:40", vill: 12, to: "berries", note: "Mill by berries (100w)" },
+      { t: "5:05", vill: 13, to: "berries" },
+      { t: "5:30", vill: 14, to: "berries" },
+      { t: "5:40", action: "Build Barracks (175w)", note: "Done before Feudal click" },
+      { t: "5:55", vill: 15, to: "wood" },
+      { t: "6:20", move: 1, from: "boar", to: "wood", note: "Boar low → 2nd lumber camp" },
+      { t: "6:20", vill: 16, to: "wood" },
+      { t: "6:45", vill: 17, to: "wood" },
+      { t: "7:10", move: 1, from: "sheep", to: "build", note: "House — stay ahead of pop cap", back: "sheep" },
+      { t: "7:15", vill: 18, to: "wood" },
+      { t: "7:20", action: "Loom (50g)", note: "Before clicking up" },
+      { t: "7:35", vill: 19, to: "wood" },
+      { t: "7:40", action: "→ CLICK FEUDAL (500f) @ pop 20", note: "~7:40 clean" },
+      { t: "9:40", action: "Feudal: Stable (135w) w/ 2 wood vills", note: "Build immediately" },
+      { t: "10:10", action: "Make Scouts (80f). 2 vills → gold.", note: "Harass enemy wood/gold" },
+      { t: "12:00", action: "Scouts out: deny walls, snipe vills", note: "→ Archers or Castle next" },
+    ],
+  },
+  {
+    id: "archers", name: "Archers 20", accent: "#4a90d9", pop: 20,
+    steps: [
+      { t: "0:00", vill: 1, to: "sheep" },
+      { t: "0:25", vill: 2, to: "sheep" },
+      { t: "0:50", vill: 3, to: "sheep" },
+      { t: "0:55", action: "Scout out — 2 houses now", note: "Find sheep, boars, berries" },
+      { t: "1:15", vill: 4, to: "sheep" },
+      { t: "1:40", vill: 5, to: "sheep" },
+      { t: "2:05", vill: 6, to: "sheep" },
+      { t: "2:15", move: 1, from: "sheep", to: "build", note: "House! Then back to sheep", back: "sheep" },
+      { t: "2:30", vill: 7, to: "sheep" },
+      { t: "2:55", vill: 8, to: "wood", note: "Lumber camp" },
+      { t: "3:20", vill: 9, to: "boar", note: "Lure boar" },
+      { t: "3:45", vill: 10, to: "boar" },
+      { t: "4:10", move: 6, from: "sheep", to: "boar", note: "Sheep done → boar" },
+      { t: "4:15", vill: 11, to: "boar" },
+      { t: "4:40", vill: 12, to: "berries", note: "Mill by berries" },
+      { t: "5:05", vill: 13, to: "berries" },
+      { t: "5:30", vill: 14, to: "berries" },
+      { t: "5:40", action: "Build Barracks (175w)", note: "Before clicking up" },
+      { t: "5:55", vill: 15, to: "wood" },
+      { t: "6:20", vill: 16, to: "wood" },
+      { t: "6:45", vill: 17, to: "wood" },
+      { t: "7:10", move: 1, from: "sheep", to: "build", note: "House — stay ahead of pop cap", back: "sheep" },
+      { t: "7:15", vill: 18, to: "wood" },
+      { t: "7:20", action: "Loom (50g)", note: "If expecting MAA/archers" },
+      { t: "7:35", vill: 19, to: "wood" },
+      { t: "7:40", action: "→ CLICK FEUDAL (500f) @ pop 20", note: "~7:40 clean" },
+      { t: "9:40", action: "Feudal: Archery Range (175w)", note: "2 wood vills, immediately" },
+      { t: "10:10", action: "3 vills → gold. Archers (25w/45g)", note: "Gold before range finishes" },
+      { t: "13:00", action: "6+ archers out → enemy gold/wood", note: "2nd Range vs scouts" },
+    ],
+  },
+  {
+    id: "maa", name: "MAA 20", accent: "#4a90d9", pop: 20,
+    steps: [
+      { t: "0:00", vill: 1, to: "sheep" },
+      { t: "0:25", vill: 2, to: "sheep" },
+      { t: "0:50", vill: 3, to: "sheep" },
+      { t: "0:55", action: "Scout out — 2 houses now", note: "Militia need an early scout read" },
+      { t: "1:15", vill: 4, to: "sheep" },
+      { t: "1:40", vill: 5, to: "sheep" },
+      { t: "2:05", vill: 6, to: "sheep" },
+      { t: "2:15", move: 1, from: "sheep", to: "build", note: "House! Then back to sheep", back: "sheep" },
+      { t: "2:30", vill: 7, to: "sheep" },
+      { t: "2:55", vill: 8, to: "wood", note: "Lumber camp" },
+      { t: "3:00", action: "Build Barracks EARLY (175w)", note: "Core of this build — ~3:00" },
+      { t: "3:20", vill: 9, to: "gold", note: "Gold in Dark Age — for Militia" },
+      { t: "3:45", vill: 10, to: "gold", note: "Queue 2–3 Militia (60f/20g)" },
+      { t: "4:10", vill: 11, to: "boar", note: "Lure boar; Militia walk to enemy" },
+      { t: "4:15", vill: 12, to: "boar" },
+      { t: "4:20", move: 6, from: "sheep", to: "boar" },
+      { t: "4:40", vill: 13, to: "berries", note: "Mill by berries" },
+      { t: "5:05", vill: 14, to: "berries" },
+      { t: "5:55", vill: 15, to: "wood" },
+      { t: "6:20", vill: 16, to: "wood" },
+      { t: "6:45", vill: 17, to: "wood" },
+      { t: "7:10", move: 1, from: "sheep", to: "build", note: "House", back: "sheep" },
+      { t: "7:15", vill: 18, to: "wood" },
+      { t: "7:20", action: "Loom (50g)", note: "Your MAA are away — protect vills" },
+      { t: "7:35", vill: 19, to: "wood" },
+      { t: "7:40", action: "→ CLICK FEUDAL (500f) @ pop 20", note: "Militia arrive as you click" },
+      { t: "9:40", action: "Feudal: MAA upgrade (100f/40g) + Range", note: "MAA pressure + archers behind" },
+      { t: "10:10", action: "4–5 vills → gold. Make Archers.", note: "MAA tank, archers deal damage" },
+    ],
+  },
+  {
+    id: "fc", name: "Fast Castle 26+2", accent: "#4a90d9", pop: 26,
+    steps: [
+      { t: "0:00", vill: 1, to: "sheep" },
+      { t: "0:25", vill: 2, to: "sheep" },
+      { t: "0:50", vill: 3, to: "sheep" },
+      { t: "0:55", action: "Scout out — 2 houses now", note: "Closed maps (Arena/Blackforest)" },
+      { t: "1:15", vill: 4, to: "sheep" },
+      { t: "1:40", vill: 5, to: "sheep" },
+      { t: "2:05", vill: 6, to: "sheep" },
+      { t: "2:15", move: 1, from: "sheep", to: "build", note: "House! Then back to sheep", back: "sheep" },
+      { t: "2:30", vill: 7, to: "sheep" },
+      { t: "2:55", vill: 8, to: "wood", note: "Lumber camp" },
+      { t: "3:20", vill: 9, to: "boar", note: "Lure boar" },
+      { t: "3:45", vill: 10, to: "boar" },
+      { t: "4:10", move: 6, from: "sheep", to: "boar" },
+      { t: "4:15", vill: 11, to: "boar" },
+      { t: "4:40", vill: 12, to: "berries", note: "Mill by berries" },
+      { t: "5:05", vill: 13, to: "berries" },
+      { t: "5:30", vill: 14, to: "berries" },
+      { t: "5:55", vill: 15, to: "wood" },
+      { t: "6:00", action: "Lure second boar as first runs out" },
+      { t: "6:30", move: 3, from: "berries", to: "boar", note: "Berries done → boar/farms" },
+      { t: "6:20", vill: 16, to: "wood" },
+      { t: "6:45", vill: 17, to: "wood" },
+      { t: "7:10", vill: 18, to: "wood" },
+      { t: "7:10", move: 1, from: "sheep", to: "build", note: "House", back: "sheep" },
+      { t: "7:35", vill: 19, to: "farms", note: "Seed farms (60w) as boar ends" },
+      { t: "8:00", vill: 20, to: "farms" },
+      { t: "8:25", vill: 21, to: "farms" },
+      { t: "8:50", vill: 22, to: "farms" },
+      { t: "9:15", vill: 23, to: "gold", note: "Gold for Castle click (200g)" },
+      { t: "9:40", vill: 24, to: "gold" },
+      { t: "9:45", action: "Loom (50g)" },
+      { t: "10:05", vill: 25, to: "wood" },
+      { t: "10:10", action: "→ CLICK FEUDAL (500f) @ pop 26", note: "~10:10 without deer" },
+      { t: "12:10", action: "Feudal: +2 gold (4). Market + Blacksmith.", note: "Both needed for Castle" },
+      { t: "13:00", action: "→ CLICK CASTLE (800f / 200g)", note: "~11:30 with deer" },
+      { t: "15:00", action: "Castle: drop 2 Town Centers, resume vills", note: "Boom to 80–100 vills" },
+    ],
+  },
+];
+
+// Compact step descriptor for pills: "+1 boar", "3 wood->build", etc.
+function stepDesc(s) {
+  if (s.vill) return "+1 " + LOC[s.to].label.toLowerCase();
+  if (s.move) return s.move + " " + LOC[s.from].label.toLowerCase() + "->" + LOC[s.to].label.toLowerCase();
+  return s.action;
+}
+// Total villager count AFTER the step at index idx (3 starting vills)
+function villCount(steps, idx) {
+  let n = 3;
+  for (let k = 0; k <= idx; k++) if (steps[k].vill) n++;
+  return n;
+}
+
+// ---------- Civilization library (eco-relevant traits, glance-level) ----------
+const CIVS = {
+  Aztecs: { eco: "Vills carry +5; Monks +5 HP each tech; relics +33% gold", mil: "Jaguar Warriors; strong Monks", tag: "Infantry/Monks" },
+  Berbers: { eco: "Vills move 5% (Feudal) to 10% (Imperial) faster", mil: "Genitours; cheap Camels/Cavalry", tag: "Cavalry" },
+  Britons: { eco: "Shepherds work 25% faster; TCs cheap", mil: "Foot archers +1 range per age", tag: "Archers" },
+  Bulgarians: { eco: "Militia line free upgrades; Blacksmith 50% food techs", mil: "Konniks; Kreposts", tag: "Infantry" },
+  Burmese: { eco: "Lumber techs free; relics +200%", mil: "Arambai; +1 inf armor per age", tag: "Monks/Infantry" },
+  Byzantines: { eco: "Cheap counter-units & Imperial; buildings +HP", mil: "Cataphracts; Fire ships", tag: "Defensive" },
+  Celts: { eco: "Lumberjacks +15%; siege +HP? (siege fires 25% faster)", mil: "Woad Raiders; fast siege", tag: "Siege" },
+  Chinese: { eco: "+3 starting vills, -200f/-150w; techs -10% per age", mil: "Chu Ko Nu", tag: "Wide tech" },
+  Cumans: { eco: "Feudal TCs possible; cheap siege", mil: "Kipchaks; Steppe Lancers? (Palace)", tag: "Cavalry" },
+  Ethiopians: { eco: "+100f/+100g each age advance", mil: "Shotel Warriors; torsion siege", tag: "Archers/Siege" },
+  Franks: { eco: "Foragers +15%; free Bloodlines; Castles cheap", mil: "Knights +20% HP; Throwing Axemen", tag: "Cavalry" },
+  Goths: { eco: "Infantry -15/20/25/30% cheaper per age; +10 pop cap", mil: "Huskarls; Anarchy", tag: "Infantry swarm" },
+  Huns: { eco: "No houses needed; Stables cheap", mil: "Tarkans; cheap Cav Archers", tag: "Cavalry" },
+  Incas: { eco: "Food discount 15/20/25/30% per age; free Llama", mil: "Kamayuks; Slingers", tag: "Infantry" },
+  Italians: { eco: "Age-ups cheap; docks/gunpowder cheap", mil: "Genoese Crossbows", tag: "Flexible" },
+  Japanese: { eco: "Fishing ships +5/10/15/20% per age; camps half price", mil: "Samurai", tag: "Infantry/Water" },
+  Khmer: { eco: "No buildings required to advance; farms +bonus? (farms don't need Mills)", mil: "Ballista Elephants", tag: "Elephants" },
+  Koreans: { eco: "Stone miners +20%; foot archers/spears -50% wood", mil: "War Wagons; Turtle Ships; towers free ups", tag: "Defensive/Water" },
+  Lithuanians: { eco: "+150f per TC start; Monks +? per relic", mil: "Leitis; Royal Knights? (cav w/ relic bonus)", tag: "Cavalry/Monks" },
+  Magyars: { eco: "Scout-line -15% food", mil: "Magyar Huszars", tag: "Cavalry" },
+  Malay: { eco: "Age-ups 66% faster; Fish traps 3x cheap", mil: "Karambit Warriors", tag: "Water/Infantry" },
+  Malians: { eco: "Gold miners +10%; buildings -15% wood", mil: "Gbeto; Farimba Cavaliers", tag: "Flexible" },
+  Mayans: { eco: "+1 start vill; resources last 15% longer; walls 50% cheap", mil: "Plumed Archers; El Dorado", tag: "Archers" },
+  Mongols: { eco: "Hunters +40% (boar/deer)", mil: "Mangudai; siege moves 50% faster", tag: "Cav Archers" },
+  Persians: { eco: "+50f/+50w start; TCs +10% HP/age; vills 5% faster per age", mil: "War Elephants; Knights (team bonus +2 anti-knight)", tag: "Cavalry/TC boom" },
+  Portuguese: { eco: "Units cost -20% gold; buildings +10% HP", mil: "Organ Guns; Caravels", tag: "Gunpowder/Water" },
+  Saracens: { eco: "Market trade only 5% fee; vills carry +5", mil: "Mamelukes; cheap CA? (Cav archers +4 vs buildings)", tag: "Camels" },
+  Slavs: { eco: "Farmers +15%; Siege cheap 15%", mil: "Boyar; cheap siege", tag: "Siege/Infantry" },
+  Spanish: { eco: "Builders 30% faster; trade +25% gold", mil: "Conquistadors; Missionaries", tag: "Gunpowder/Monks" },
+  Tatars: { eco: "Hill units +25% dmg; herdables 2x food", mil: "Flaming Camels; Keshiks", tag: "Cav Archers" },
+  Teutons: { eco: "Farms 40% cheap; Monastery healing x2? (units resist conv); melee armor cheap", mil: "Teutonic Knights; garrison Towers", tag: "Defensive/Infantry" },
+  Turks: { eco: "Gold miners +25%; Chemistry free; Light Cav free ups", mil: "Janissaries; Bombards; HC +range", tag: "Gunpowder" },
+  Vietnamese: { eco: "Reveal enemy positions at start; Paper Money team gold", mil: "Rattan Archers; Imperial Skirms", tag: "Archers" },
+  Armenians: { eco: "Eco techs +4% stronger", mil: "Warrior Priests; Composite Bowmen", tag: "Infantry/Defense", dlc: true },
+  Burgundians: { eco: "Eco upgrades ONE AGE EARLIER, -40% food", mil: "Coustilliers; Cavaliers in Castle", tag: "Cavalry" },
+  Georgians: { eco: "Vills +10% near Fortified Church", mil: "Monaspas", tag: "Cavalry", dlc: true },
+  Romans: { eco: "Vills +5% all resources", mil: "Centurions; Legionaries", tag: "Infantry", dlc: true },
+  Danes: { eco: "Food drop-off +5%", mil: "Jomsvikings; Jarls", tag: "Infantry/Siege", dlc: true },
+  Khitans: { eco: "Counter-units train 25% faster", mil: "Liao Dao; Ordo Cavalry", tag: "Steppe", dlc: true },
+  Mapuche: { eco: "Foragers +25%", mil: "Champi line", tag: "South American", dlc: true },
+  Muisca: { eco: "The Last Chieftains civ", mil: "Temple Guards; Guecha Warriors", tag: "South American", dlc: true },
+  Tupi: { eco: "The Last Chieftains civ", mil: "Ibirapema Warriors; Blackwood Archers", tag: "South American", dlc: true },
+  Bengalis: { eco: "Elephants resist conversion", mil: "Rathas", tag: "Elephants" },
+  Bohemians: { eco: "—", mil: "Hussite Wagons; Houfnice", tag: "Gunpowder" },
+  Dravidians: { eco: "—", mil: "Urumi Swordsmen; Thirisadai", tag: "Infantry/Water" },
+  Gurjaras: { eco: "Mill generates food trickle", mil: "Shrivamsha Riders; Chakrams", tag: "Cavalry" },
+  Hindustanis: { eco: "Grand Trunk Road trade", mil: "Ghulams; Imperial Camel Riders", tag: "Camels/Gunpowder" },
+  Poles: { eco: "Folwark gathering", mil: "Obuchs", tag: "Cavalry" },
+  Sicilians: { eco: "Land units -25% bonus damage taken", mil: "Serjeants; Donjons", tag: "Infantry/Defensive" },
+  Jurchens: { eco: "DLC civ (The Three Kingdoms)", mil: "Cavalry Archers", tag: "Steppe", dlc: true },
+  Saxons: { eco: "DLC civ (The Viking Sagas)", mil: "Hearth Troops", tag: "Infantry", dlc: true },
+  Shu: { eco: "DLC civ (The Three Kingdoms)", mil: "White Feather Guard; Fire Archers", tag: "Three Kingdoms", dlc: true },
+  Varangians: { eco: "DLC civ (The Viking Sagas)", mil: "Varangian Guards; Jomsvikings", tag: "Infantry", dlc: true },
+  Wei: { eco: "DLC civ (The Three Kingdoms)", mil: "Tiger Cavalry; Xianbei Raiders", tag: "Three Kingdoms", dlc: true },
+  Wu: { eco: "DLC civ (The Three Kingdoms)", mil: "Jian Swordsmen", tag: "Three Kingdoms", dlc: true },
+  Vikings: { eco: "Wheelbarrow/Hand Cart FREE; warships cheap", mil: "Berserks; Chieftains", tag: "Water/Infantry" },
+};
+
+// Civ crest icons (aoe2techtree assets, local files). Keys are single-word civ names.
+const CIV_ICON = (civ) => "icons/civs/" + civ.toLowerCase() + ".png";
+// Base-game civs (no paid DLC required) vs all civs (enemy AI can pick any).
+const BASE_CIV_LIST = Object.keys(CIVS).filter((c) => !CIVS[c].dlc).sort();
+const ALL_CIV_LIST = Object.keys(CIVS).sort();
+
+function CivBadge({ side, value, active, onOpen }) {
+  const civ = value ? CIVS[value] : null;
+  const color = side === "enemy" ? "#c05a5a" : "#4a90d9";
+  const label = side === "me" ? "Me" : side === "ally" ? "🛡 Ally" : "⚔ Enemy";
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button onClick={onOpen}
+        className="flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-sm font-bold"
+        style={{
+          borderColor: color + "aa",
+          backgroundColor: active ? color + "33" : "#241b10",
+          color: "#f3e8cf", minWidth: 96, minHeight: 34,
+        }}>
+        {civ
+          ? <img src={CIV_ICON(value)} alt="" style={{ width: 22, height: 22, objectFit: "contain" }} />
+          : <span className="text-xs" style={{ color }}>{label}</span>}
+        {civ && <span className="max-w-[110px] truncate">{value}</span>}
+        <span className="text-[10px] opacity-60">▾</span>
+      </button>
+      {civ && (
+        <div className="rounded-lg border px-2 py-1 text-[11px] leading-snug"
+          style={{ borderColor: color + "88", backgroundColor: "#1d1610", maxWidth: 170 }}>
+          <div className="font-bold" style={{ color }}>{value}</div>
+          <div>• Style: <span className="text-amber-100/80">{civ.tag}</span></div>
+          <div>• Eco: <span className="text-amber-100/80">{civ.eco}</span></div>
+          <div>• Mil: <span className="text-amber-100/80">{civ.mil}</span></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Civ picker as a MODAL OVERLAY: compact 4-column tile grid (tiles ~66px = 50% above the
+// 44px minimum touch target standard), solid opaque colors, scrollable, tap backdrop to cancel.
+function CivPicker({ color, civs, value, extra, onSelect }) {
+  const tile = (selected) => ({
+    backgroundColor: selected ? color : "#241b10",
+    border: "1px solid " + (selected ? color : "#3a2e1c"),
+    color: selected ? "#14100a" : "#f3e8cf",
+    minHeight: 66,
+  });
+  return (
+    <div onClick={() => onSelect(null)}
+      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(10,8,5,0.75)" }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ display: "grid", gridTemplateColumns: "repeat(4, 68px)", gap: 6, padding: 8, backgroundColor: "#1a1410", border: "2px solid " + color, borderRadius: 16, maxHeight: "76vh", overflowY: "auto", boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
+        {extra && extra.map((x) => (
+          <button key={String(x.value)} onClick={() => onSelect(x.value)}
+            className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+            style={tile(String(x.value) === String(value))}>
+            <span style={{ fontSize: 18, lineHeight: "22px" }}>{x.icon || ""}</span>
+            <span className="max-w-full truncate" style={{ fontSize: 10, fontWeight: "bold" }}>{x.label}</span>
+          </button>
+        ))}
+        {civs.map((c) => (
+          <button key={c} onClick={() => onSelect(c)}
+            className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+            style={tile(c === value)}>
+            <img src={CIV_ICON(c)} alt={c} style={{ width: 22, height: 22, objectFit: "contain" }} />
+            <span className="max-w-full truncate" style={{ fontSize: 10, fontWeight: "bold" }}>{c}</span>
+          </button>
+        ))}
+        <button onClick={() => onSelect("")}
+          className="flex flex-col items-center justify-center rounded-lg px-1 py-1"
+          style={tile(false)}>
+          <span style={{ fontSize: 18, lineHeight: "22px" }}>✕</span>
+          <span style={{ fontSize: 10, fontWeight: "bold" }}>Clear</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Ordinal suffix helper: 1st, 2nd, 3rd, 4th …
+const ord = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
+
+function StepMini({ s, size, opacity, timeSize, accent }) {
+  const dest = s.to ? LOC[s.to] : null;
+  const src = s.from ? LOC[s.from] : null;
+  // Static arrows only — animations inside dimmed steps read as full opacity
+  return (
+    <div style={{ opacity }} className="flex flex-1 flex-col items-center justify-start gap-0.5 text-center">
+      <span className="font-mono font-bold" style={{ fontSize: timeSize, color: accent }}>{s.t}</span>
+      <div className="flex items-center gap-1">
+        {s.vill && (
+          <>
+            <Icon kind="villager" size={size} />
+            <span style={{ color: accent, fontSize: size * 0.6, fontWeight: "bold" }}>➜</span>
+            <Icon kind={dest.icon} size={size} />
+          </>
+        )}
+        {s.move && (
+          <>
+            <Icon kind={src.icon} size={size} />
+            <span style={{ color: accent, fontSize: size * 0.6, fontWeight: "bold" }}>➜</span>
+            <Icon kind={dest.icon} size={size} />
+            <span style={{ fontSize: timeSize + 2 }} className="font-bold text-amber-100">×{s.move}</span>
+          </>
+        )}
+        {s.action && <Icon kind={s.iconHint || "house"} size={size} />}
+      </div>
+      {s.vill && <span style={{ fontSize: timeSize + 2 }} className="font-bold text-amber-100">{ord(s.vill + 3)} villager</span>}
+      {s.action && (
+        <span style={{ fontSize: timeSize + 1 }} className="max-w-[140px] leading-tight font-semibold text-amber-100/90">
+          {s.action.length > 36 ? s.action.slice(0, 35) + "…" : s.action}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [boId, setBoId] = useState("scouts");
+  const [myCiv, setMyCiv] = useState("Spanish");
+  const [civsOpen, setCivsOpen] = useState(false);
+  const [picker, setPicker] = useState(null); // "me" | "ally:N" | "enemy:N" | "pc" | null
+  // Dynamic filter rows: setting the last slot appends a fresh empty one; clearing prunes empties (one trailing empty kept)
+  const setCivAt = (arr, setArr, k, v) => {
+    const next = arr.map((x, j) => (j === k ? v : x));
+    if (v && k === arr.length - 1) next.push("");
+    const pruned = next.filter(Boolean);
+    setArr(pruned.length ? [...pruned, ""] : [""]);
+  };
+  const [allies, setAllies] = useState(["Britons", ""]);
+  const [enemies, setEnemies] = useState([""]);
+  const [i, setI] = useState(0);
+  // Production calculator state
+  const [pcOpen, setPcOpen] = useState(false);
+  const [pcAge, setPcAge] = useState("feudal");
+  const [pcCiv, setPcCiv] = useState(""); // "" = follow civ panel's Me civ
+  const [pcSel, setPcSel] = useState({}); // unitId -> building count
+  const bo = useMemo(() => BUILD_ORDERS.find((b) => b.id === boId), [boId]);
+  const steps = bo.steps;
+  const step = steps[i];
+
+  // Assignment replay
+  const assign = useMemo(() => {
+    const a = { sheep: 3 };
+    for (let k = 0; k < i; k++) {
+      const s = steps[k];
+      if (s.vill) a[s.to] = (a[s.to] || 0) + 1;
+      if (s.move) {
+        a[s.from] = Math.max(0, (a[s.from] || 0) - s.move); a[s.to] = (a[s.to] || 0) + s.move;
+        // House builds are one-time tasks: by the next step the villager is back gathering.
+        if (s.back) { a[s.to] = Math.max(0, a[s.to] - s.move); a[s.back] = (a[s.back] || 0) + s.move; }
+      }
+    }
+    return a;
+  }, [boId, i]);
+
+  const next = useCallback(() => setI((v) => Math.min(v + 1, steps.length - 1)), [steps.length]);
+  const prev = useCallback(() => setI((v) => Math.max(v - 1, 0)), []);
+  useEffect(() => {
+    const h = (e) => {
+      if (e.key === " " || e.key === "ArrowRight") { e.preventDefault(); next(); }
+      if (e.key === "ArrowLeft") prev();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [next, prev]);
+
+  const rates = useMemo(() => {
+    const r = { food: 0, wood: 0, gold: 0, stone: 0 };
+    for (const [loc, n] of Object.entries(assign)) if (LOC[loc].res !== "none") r[LOC[loc].res] += (RATES_MIN[loc] || 0) * n;
+    return r;
+  }, [assign]);
+  const vills = Object.values(assign).reduce((a, b) => a + b, 0);
+
+  // ---- Production calculator derived values ----
+  const pcCivName = pcCiv === "Generic" ? "" : pcCiv || myCiv || "";
+  const pcTotals = useMemo(() => {
+    const ageRates = { ...GATHER[pcAge], ...((CIV_ECO[pcCivName] || {})[pcAge] || {}) };
+    const rate = (res) => ageRates[res];
+    const totals = { food: 0, wood: 0, gold: 0 };
+    for (const [id, n] of Object.entries(pcSel)) {
+      if (!n || !UNITS[id]) continue;
+      const u = UNITS[id];
+      // per-civ unit variants (cost discounts per age, train-speed multipliers)
+      const mod = (u.civMod || {})[pcCivName] || null;
+      let t = u.t;
+      const cost = { ...u.cost };
+      if (mod) {
+        if (mod.train) t = t / mod.train;
+        if (mod.disc) {
+          const d = typeof mod.disc === "number" ? mod.disc : (mod.disc[pcAge] || 0);
+          for (const r of (mod.res || Object.keys(cost))) if (cost[r] != null) cost[r] = cost[r] * (1 - d);
+        }
+      }
+      let speed = pcAge === "imperial" ? CONSCRIPTION : 1;
+      // Team bonuses derived from the civ panel: own civ + allies (non-stacking)
+      const teamCivs = new Set([myCiv, ...allies].filter(Boolean));
+      for (const a of teamCivs) { const tb = TEAM_BONUS[a]; if (tb && tb.bld === u.bld) speed *= tb.mult; }
+      for (const [res, c] of Object.entries(cost)) {
+        totals[res] += (n * c / t) * speed / rate(res);
+      }
+    }
+    return totals;
+  }, [pcSel, pcAge, pcCivName, myCiv, allies.join(",")]);
+
+  // Time helpers + minute ruler marks (positions derived from the step times in the pills)
+  const tSec = (t) => { const [m, s] = t.split(":").map(Number); return m * 60 + s; };
+  const minuteMarks = useMemo(() => {
+    const total = tSec(steps[steps.length - 1].t);
+    const marks = [];
+    for (let m = 1; m * 60 <= total; m++) {
+      const tt = m * 60;
+      let k = steps.length - 1;
+      for (let j = 0; j < steps.length - 1; j++) {
+        if (tSec(steps[j].t) <= tt && tt <= tSec(steps[j + 1].t)) { k = j; break; }
+      }
+      const span = tSec(steps[Math.min(k + 1, steps.length - 1)].t) - tSec(steps[k].t);
+      const frac = span > 0 ? (tt - tSec(steps[k].t)) / span : 0;
+      marks.push({ m, pct: ((k + Math.min(frac, 1)) / steps.length) * 100 });
+    }
+    return marks;
+  }, [boId]);
+
+  const prev2 = steps[i - 2], prev1 = steps[i - 1], next1 = steps[i + 1], next2 = steps[i + 2];
+
+  // Arrow-indicator geometry (fractions of board width, 8 columns)
+  const colCenter = (loc) => (COLS.indexOf(loc) + 0.5) / COLS.length;
+  const moveL = step.move ? Math.min(colCenter(step.from), colCenter(step.to)) : 0;
+  const moveW = step.move ? Math.abs(colCenter(step.to) - colCenter(step.from)) : 0;
+  const moveFwd = step.move ? colCenter(step.to) > colCenter(step.from) : true;
+
+  return (
+    <div className="flex min-h-screen flex-col gap-3 p-2 sm:p-4" style={{ backgroundColor: "#14100a", color: "#f3e8cf", fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
+      {/* Build tabs — vill/pop counter left-aligned */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="rounded-lg bg-black/40 px-4 py-1.5 text-lg font-semibold tabular-nums text-amber-200">
+          👥 {vills} vills
+        </div>
+        {BUILD_ORDERS.map((b) => (
+          <button key={b.id} onClick={() => { setBoId(b.id); setI(0); }}
+            className="rounded-lg px-4 py-1.5 text-lg font-bold transition-all"
+            style={{ backgroundColor: boId === b.id ? b.accent : "#241b10", color: boId === b.id ? "#14100a" : "#cbb98e" }}>
+            {b.name}
+          </button>
+        ))}
+      </div>
+
+      {/* PERSISTENT LOCATION BOARD */}
+      <div className="grid grid-cols-4 gap-1.5 rounded-2xl border border-amber-900/60 bg-black/40 p-1.5 sm:grid-cols-8 sm:gap-2 sm:p-2">
+        {COLS.map((loc) => {
+          const L = LOC[loc];
+          const n = assign[loc] || 0;
+          const hot = (step.vill && step.to === loc) || (step.move && step.to === loc);
+          const cold = step.move && step.from === loc;
+          const moving = step.move && (step.to === loc || step.from === loc);
+          const HL = { food: "#b04040", wood: "#3f7a3f", gold: "#9a7a20", stone: "#5a6470" }[loc] || bo.accent;
+          const shown = Math.min(n, 10);
+          const rest = n - 10;
+          return (
+            <motion.div key={loc}
+              animate={{ scale: hot ? [1, 1.06, 1] : 1, opacity: n === 0 && !hot ? 0.35 : 1 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center rounded-xl border-2 px-1 py-1.5"
+              style={{
+                borderColor: hot || cold ? HL : L.color + "55",
+                backgroundColor: hot ? HL + "38" : cold ? HL + "20" : "rgba(0,0,0,0.3)",
+              }}>
+              <Icon kind={L.icon} size={38} />
+              <span className="text-2xl font-semibold leading-tight tabular-nums" style={{ color: n > 0 ? L.color : "#5a5142" }}>{n}</span>
+              <div className="flex max-w-full flex-wrap justify-center" style={{ rowGap: 2, minHeight: 8 }}>
+                <div className="flex justify-center" style={{ columnGap: 2 }}>
+                  {Array.from({ length: Math.min(shown, 5) }).map((_, k) => (
+                    <motion.span key={k}
+                      animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : {}}
+                      transition={{ repeat: Infinity, duration: 0.9, delay: k * 0.06 }}
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: L.color, boxShadow: moving ? `0 0 6px ${L.color}` : "none" }} />
+                  ))}
+                </div>
+                {shown > 5 && (
+                  <div className="flex justify-center" style={{ marginLeft: 5, columnGap: 2 }}>
+                    {Array.from({ length: shown - 5 }).map((_, k) => (
+                      <motion.span key={k + 5}
+                        animate={moving ? { scale: [1, 1.5, 1], opacity: [1, 0.6, 1] } : {}}
+                        transition={{ repeat: Infinity, duration: 0.9, delay: (k + 5) * 0.06 }}
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: L.color, boxShadow: moving ? `0 0 6px ${L.color}` : "none" }} />
+                    ))}
+                  </div>
+                )}
+                {rest > 0 && <span className="text-[9px] leading-3" style={{ color: L.color }}>+{rest}</span>}
+              </div>
+              <span className="text-[10px] uppercase tracking-wide text-amber-100/40">{L.label}</span>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* ARROW INDICATOR ROW — below the board, aligned to its columns */}
+      <div className="relative h-14 rounded-xl bg-black/30" style={{ marginTop: -6 }}>
+        {step.vill && (
+          <div className="absolute flex flex-col items-center"
+            style={{ left: `${colCenter(step.to) * 100}%`, transform: "translateX(-50%)", bottom: 2, top: 0 }}>
+            <div className="flex flex-col items-center">
+              <span className="text-sm font-bold" style={{ color: bo.accent }}>+{ord(step.vill + 3)} villager</span>
+              <motion.span animate={{ y: [4, -2, 4], opacity: [0.6, 1, 0.6] }}
+                transition={{ repeat: Infinity, duration: 0.9 }}
+                className="text-3xl leading-none" style={{ color: bo.accent }}>▲</motion.span>
+            </div>
+          </div>
+        )}
+        {step.move && (
+          <div className="absolute" style={{ left: `${moveL * 100}%`, width: `${moveW * 100}%`, top: 6, bottom: 6 }}>
+            <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+              <defs>
+                <marker id="ah" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0 0 L6 3 L0 6 Z" fill={bo.accent} />
+                </marker>
+              </defs>
+              <line x1={moveFwd ? 2 : 98} y1="20" x2={moveFwd ? 92 : 8} y2="20"
+                stroke={bo.accent} strokeWidth="2.5" markerEnd="url(#ah)" />
+            </svg>
+            <div className="absolute flex w-full justify-center gap-1" style={{ top: 2 }}>
+              {Array.from({ length: step.move }).map((_, k) => (
+                <motion.span key={k}
+                  animate={{ x: moveFwd ? [0, 12] : [0, -12], opacity: [1, 1] }}
+                  transition={{ repeat: Infinity, duration: 0.9, delay: k * 0.12, repeatType: "reverse" }}
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: LOC[step.from].color, boxShadow: `0 0 8px ${LOC[step.from].color}` }} />
+              ))}
+              <span className="ml-1 text-sm font-bold" style={{ color: bo.accent }}>{step.move} vills move</span>
+            </div>
+          </div>
+        )}
+        {!step.vill && !step.move && (
+          <div className="absolute inset-0 flex items-center justify-center text-lg font-bold text-amber-100/40">
+            🛠️ {step.action}
+          </div>
+        )}
+      </div>
+
+      {/* PERSISTENT RATES STRIP (per minute) */}
+      {/* Rates strip: villager count left of label, icon top, number left-aligned & fixed-width (no layout shift 9→10) */}
+      <div className="flex flex-wrap items-start gap-6 rounded-xl bg-black/35 px-4 py-1.5">
+        {[["food", "food"], ["wood", "woodres"], ["gold", "goldres"], ["stone", "stoneres"]].map(([res, ico]) => {
+          const gatherers = Object.entries(assign).reduce((n, [loc, cnt]) => (LOC[loc].res === res ? n + cnt : n), 0);
+          return (
+            <span key={res} className="flex flex-col items-center leading-tight">
+              <Icon kind={ico} size={26} />
+              <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide">
+                <span className="font-bold text-amber-200/80">{gatherers}</span>
+                <span className="text-amber-100/40">{res}</span>
+              </span>
+              <span className="flex w-[74px] items-baseline justify-start text-[22px] font-semibold tabular-nums" style={{ color: RES_C[res], fontVariantNumeric: "tabular-nums" }}>
+                {rates[res].toFixed(1)}<span className="text-sm font-medium opacity-40">/m</span>
+              </span>
+            </span>
+          );
+        })}
+      </div>
+
+      {/* PRODUCTION CALCULATOR — expanding panel */}
+      <div className="rounded-xl border border-amber-900/50 bg-black/30">
+        <button onClick={() => setPcOpen(!pcOpen)}
+          className="flex w-full items-center justify-between rounded-xl px-4 py-1.5 text-sm font-semibold text-amber-200 hover:bg-black/30">
+          <span>⚒ Production calculator — vills for constant production</span>
+          <span>{pcOpen ? "▲" : "▼"}</span>
+        </button>
+        {pcOpen && (
+          <div className="flex flex-col gap-2 px-4 pb-3 pt-1">
+            {/* Age + civ + team bonuses */}
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {AGE_KEYS.map((a) => (
+                <button key={a} onClick={() => setPcAge(a)}
+                  className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-all"
+                  style={{ backgroundColor: pcAge === a ? bo.accent : "#241b10", color: pcAge === a ? "#14100a" : "#cbb98e" }}>
+                  {AGE_LABEL[a]}
+                </button>
+              ))}
+              <button onClick={() => setPicker(picker === "pc" ? null : "pc")}
+                className="flex items-center gap-1.5 rounded-lg border border-amber-900/70 bg-black/50 px-2 py-1.5 text-xs font-bold text-amber-100">
+                {pcCivName && CIVS[pcCivName] && <img src={CIV_ICON(pcCivName)} alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />}
+                Civ: {pcCiv || myCiv || "Generic"} <span className="text-[10px] opacity-60">&#9662;</span>
+              </button>
+            </div>
+            {picker === "pc" && (
+              <CivPicker color={bo.accent} civs={BASE_CIV_LIST} value={pcCiv}
+                extra={[{ value: "Generic", label: "Generic", icon: "⚒" }]}
+                onSelect={(v) => { if (v !== null) setPcCiv(v); setPicker(null); }} />
+            )}
+            {/* Unit selection grid */}
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(UNITS).filter(([id, u]) => AGE_KEYS.indexOf(u.age) <= AGE_KEYS.indexOf(pcAge) && !u.excl.includes(pcCivName)).map(([id, u]) => {
+                const sel = pcSel[id] || 0;
+                return (
+                  <button key={id} onClick={() => setPcSel((s) => ({ ...s, [id]: sel ? 0 : 1 }))}
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-all"
+                    style={{
+                      backgroundColor: sel ? bo.accent + "33" : "#1d1610",
+                      border: "1px solid " + (sel ? bo.accent : "#3a2e1c"),
+                      color: sel ? "#f3e8cf" : "#9a8a68", textDecoration: u.excl.includes(pcCivName) ? "line-through" : "none",
+                    }}
+                    title={u.excl.includes(pcCivName) ? "Not available for " + pcCivName : u.label + " — " + Object.entries(u.cost).map(([r, v]) => v + " " + r).join(", ") + ", " + u.t + "s"}>
+                    <span>{u.emoji}</span><span>{u.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Building counts + totals */}
+            {Object.entries(pcSel).filter(([, n]) => n > 0).length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(pcSel).filter(([, n]) => n > 0).map(([id, n]) => (
+                    <span key={id} className="flex items-center gap-1.5 rounded-lg bg-black/40 px-2 py-1 text-xs text-amber-100">
+                      <span>{UNITS[id].emoji}</span>
+                      <select value={n} onChange={(e) => setPcSel((s) => ({ ...s, [id]: Number(e.target.value) }))}
+                        className="rounded bg-black/50 px-1 py-0.5 text-xs text-amber-100">
+                        {[1, 2, 3, 4, 5, 6].map((k) => <option key={k} value={k}>{k}×</option>)}
+                      </select>
+                      <span className="text-amber-100/60">{UNITS[id].label}</span>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-4 rounded-xl bg-black/35 px-4 py-2">
+                  <span className="text-[11px] uppercase tracking-wide text-amber-100/40">vills needed</span>
+                  {["food", "wood", "gold"].map((res) => {
+                    const v = pcTotals[res];
+                    if (!v) return null;
+                    return (
+                      <span key={res} className="flex items-baseline gap-1.5">
+                        <Icon kind={res === "food" ? "food" : res === "wood" ? "woodres" : "goldres"} size={22} />
+                        <span className="text-xl font-semibold tabular-nums" style={{ color: RES_C[res] }}>{Math.ceil(v)}</span>
+                        <span className="text-[11px] uppercase text-amber-100/50">{res}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* CIV PANEL: moved below the running-action display; see after the context row */}
+
+      {/* CONTEXT ROW: 2 prev — current — 2 next (always one horizontal row; next1 sits directly at place 1) */}
+      <div className="flex flex-row items-stretch gap-3 overflow-x-auto">
+        <div className="flex flex-1 items-center justify-end gap-3">
+          {prev2 && <StepMini s={prev2} size={24} opacity={0.3} timeSize={12} accent={bo.accent} />}
+          {prev1 && <StepMini s={prev1} size={30} opacity={0.55} timeSize={13} accent={bo.accent} />}
+        </div>
+
+        {/* Current step — compact card (no transition animation; instant swap to keep info visible) */}
+        <div key={boId + i}
+            className="flex w-[38%] min-w-[220px] shrink-0 flex-col items-center gap-2 rounded-2xl border-2 px-2 py-2 sm:flex-row sm:gap-4 sm:px-4 sm:py-2.5"
+            style={{ borderColor: bo.accent, backgroundColor: "rgba(0,0,0,0.55)" }}>
+            <div className="flex flex-col items-center">
+              {step.vill && <Icon kind="villager" size={42} />}
+              {step.move && <Icon kind={LOC[step.from].icon} size={36} />}
+              {step.action && <Icon kind="house" size={38} />}
+              <span className="font-mono text-lg font-bold" style={{ color: bo.accent }}>{step.t}</span>
+            </div>
+            <div>
+              {step.vill && (
+                <div className="flex items-center gap-2 text-2xl font-bold">
+                  <span>{ord(step.vill + 3)} villager</span>
+                  <motion.span animate={{ x: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 1 }} style={{ color: bo.accent }}>➜</motion.span>
+                  <Icon kind={LOC[step.to].icon} size={30} />
+                  <span>{LOC[step.to].label}</span>
+                </div>
+              )}
+              {step.move && (
+                <div className="flex items-center gap-2 text-2xl font-bold">
+                  <Icon kind={LOC[step.from].icon} size={30} />
+                  <span>×{step.move}</span>
+                  <motion.span animate={{ x: [0, 10, 0] }} transition={{ repeat: Infinity, duration: 0.9 }} style={{ color: bo.accent }}>➜</motion.span>
+                  <Icon kind={LOC[step.to].icon} size={30} />
+                  <span>{LOC[step.to].label}</span>
+                </div>
+              )}
+              {step.action && <div className="text-2xl font-bold" style={{ color: bo.accent }}>{step.action}</div>}
+              <div className="text-base text-amber-100/70">{step.note || ""}</div>
+            </div>
+          </div>
+
+        <div className="flex flex-1 items-center justify-start gap-3">
+          {next1 && <StepMini s={next1} size={30} opacity={0.55} timeSize={13} accent={bo.accent} />}
+          {next2 && <StepMini s={next2} size={24} opacity={0.3} timeSize={12} accent={bo.accent} />}
+        </div>
+      </div>
+
+      {/* CIV PANEL — below the running action display */}
+      <div className="flex justify-center">
+        <button onClick={() => setCivsOpen(!civsOpen)}
+          className="rounded-full border border-amber-900/70 bg-black/40 px-4 py-1 text-sm font-bold text-amber-200 hover:bg-amber-950/60">
+          ⚔ Civilizations {civsOpen ? "▲" : "▼"}
+        </button>
+      </div>
+      {civsOpen && (
+        <div className="rounded-2xl border border-amber-900/50 bg-black/30 px-3 py-2">
+          {/* Row 1: me + friends — always visible while open */}
+          <div className="flex flex-wrap justify-center gap-2 sm:gap-4">
+            <CivBadge side="me" value={myCiv} active={picker === "me"}
+              onOpen={() => setPicker(picker === "me" ? null : "me")} />
+            {allies.map((a, k) => (
+              <CivBadge key={k} side="ally" value={a} active={picker === "ally:" + k}
+                onOpen={() => setPicker(picker === "ally:" + k ? null : "ally:" + k)} />
+            ))}
+          </div>
+          {(picker === "me" || /^ally:\d+$/.test(picker)) && (
+            <CivPicker color="#4a90d9" civs={BASE_CIV_LIST}
+              value={picker === "me" ? myCiv : allies[Number(picker.slice(5))]}
+              onSelect={(v) => {
+                if (v === null) { setPicker(null); return; }
+                if (picker === "me") setMyCiv(v);
+                else setCivAt(allies, setAllies, Number(picker.slice(5)), v);
+                setPicker(null);
+              }} />
+          )}
+          {/* Row 2: enemies — always visible while open; AI may pick any civ incl. DLC */}
+          <div className="mt-2 flex flex-wrap justify-center gap-2 border-t border-amber-900/40 pt-2 sm:gap-4">
+            {enemies.map((e, k) => (
+              <CivBadge key={k} side="enemy" value={e} active={picker === "enemy:" + k}
+                onOpen={() => setPicker(picker === "enemy:" + k ? null : "enemy:" + k)} />
+            ))}
+          </div>
+          {/^enemy:\d+$/.test(picker) && (
+            <CivPicker color="#c05a5a" civs={ALL_CIV_LIST}
+              value={enemies[Number(picker.slice(7))]}
+              onSelect={(v) => { if (v !== null) setCivAt(enemies, setEnemies, Number(picker.slice(7)), v); setPicker(null); }} />
+          )}
+        </div>
+      )}
+
+      {/* Progression + controls */}
+      <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <button onClick={prev} className="rounded-xl bg-black/50 px-5 py-2 text-xl hover:bg-black/70">◀</button>
+        <div className="flex-1 overflow-x-auto rounded-xl bg-black/30 p-1.5">
+          <div className="relative" style={{ display: "grid", gridTemplateColumns: `repeat(${steps.length}, minmax(56px, 1fr))`, gap: "4px" }}>
+            {/* minute ruler above the pills, positions computed from step times */}
+            <div className="absolute left-0 right-0 top-0 h-3.5">
+              {minuteMarks.map(({ m, pct }) => (
+                <div key={m} className="absolute flex flex-col items-center" style={{ left: pct + "%", transform: "translateX(-50%)" }}>
+                  <span className="text-[9px] font-bold leading-none text-amber-100/50">{m}</span>
+                  <span className="mt-0.5 h-1 w-1 rounded-full bg-amber-100/50" />
+                </div>
+              ))}
+            </div>
+          {steps.map((s, idx) => {
+            const vc = villCount(steps, idx);
+            return (
+              <button key={idx} onClick={() => setI(idx)}
+                className="mt-4 flex flex-col items-center rounded-lg px-1 py-0.5 text-[10px] leading-tight transition-all"
+                style={{
+                  backgroundColor: idx === i ? bo.accent + "33" : "transparent",
+                  border: idx === i ? "1px solid " + bo.accent : "1px solid transparent",
+                  opacity: idx > i + 2 ? 0.45 : 1,
+                }}>
+                <span className="font-mono font-bold" style={{ color: bo.accent }}>{s.t}</span>
+                <span className="font-bold text-amber-200">{vc}&#129485;</span>
+                <span className="max-w-[64px] truncate text-amber-100/70" title={stepDesc(s)}>{stepDesc(s)}</span>
+              </button>
+            );
+          })}
+          </div>
+        </div>
+        <button onClick={next} disabled={i >= steps.length - 1}
+          className="rounded-xl px-8 py-2 text-xl font-extrabold disabled:opacity-40"
+          style={{ backgroundColor: bo.accent, color: "#14100a", minWidth: 120 }}>
+          NEXT ▶ <span className="text-xs font-normal">(Space)</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+import { createRoot } from "react-dom/client";
+createRoot(document.getElementById("root")).render(<App />);
+
+</script>
+</body>
+</html>
