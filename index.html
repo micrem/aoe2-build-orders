@@ -287,7 +287,7 @@ const TEAM_BONUS = { // applied automatically from the civ panel (own civ + alli
   Britons: { label: "🏹 Britons: Ranges +20%", bld: "range", mult: 1.20 },
 };
 const CONSCRIPTION = 1.33; // Imperial, assumed researched
-const APP_VERSION = "1.8"; // bump on every change; shown top-right so deployed/viewed builds are identifiable
+const APP_VERSION = "1.9"; // bump on every change; shown top-right so deployed/viewed builds are identifiable
 
 // ---------- Icons: actual game art (Age of Empires Wiki, fair-use game assets) ----------
 const IMGS = {
@@ -738,7 +738,7 @@ function App() {
     const totals = { food: 0, wood: 0, gold: 0 };
     for (const [id, n] of Object.entries(pcSel)) {
       if (!n || !ALL_UNITS[id]) continue;
-      const u = UNITS[id];
+      const u = ALL_UNITS[id];
       // per-civ unit variants (cost discounts per age, train-speed multipliers)
       const mod = (u.civMod || {})[pcCivName] || null;
       let t = u.t;
